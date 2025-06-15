@@ -1,6 +1,7 @@
 import json
 import time
 import requests
+import re
 from datetime import datetime
 from requests.exceptions import RequestException
 import utils
@@ -21,38 +22,53 @@ PAYLOAD_TEMPLATE = {
 }
 
 class CianPhoneParser:
-    def __init__(self, max_phones=200):
+    def __init__(self, max_phones=50, log_callback=None):
         utils.ensure_output_dir()
         self.parsed_data = {}
-        self.max_phones = max_phones  # Ограничение количества номеров
+        self.max_phones = max_phones
+        self.log_callback = log_callback
         self.load_existing_data()
         self.start_time = datetime.now()
-        print(f"[{self.start_time}] Начало парсинга телефонных номеров")
-        print(f"ОГРАНИЧЕНИЕ: Будет обработано не более {self.max_phones} номеров")
+        self._log(f"[{self.start_time}] Начало парсинга телефонных номеров")
+        self._log(f"ОГРАНИЧЕНИЕ: Будет обработано не более {self.max_phones} номеров")
+    
+    def _log(self, message):
+        if self.log_callback:
+            self.log_callback(message)
+        else:
+            print(message)
+    
+    def extract_domain(self, url):
+        """Извлекает региональный поддомен из URL"""
+        match = re.search(r'https?://([a-z]+)\.cian\.ru', url)
+        return match.group(1) if match else "www"
     
     def load_existing_data(self):
-        """Загружает ранее спарсенные данные"""
         phones_file = utils.get_phones_file()
         try:
             with open(phones_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 self.parsed_data = data.get("data", {})
-            print(f"Загружено {len(self.parsed_data)} существующих номеров")
+            self._log(f"Загружено {len(self.parsed_data)} существующих номеров")
         except (FileNotFoundError, json.JSONDecodeError):
+            self._log("Файл с номерами не найден, начинаем с чистого листа")
             self.parsed_data = {}
     
     def save_data(self):
-        """Сохраняет данные в JSON файл"""
         with open(utils.get_phones_file(), 'w', encoding='utf-8') as f:
             json.dump({"data": self.parsed_data}, f, ensure_ascii=False, indent=2)
-        print(f"[{datetime.now()}] Сохранено {len(self.parsed_data)} номеров")
+        self._log(f"[{datetime.now()}] Сохранено {len(self.parsed_data)} номеров")
     
-    def fetch_phone_with_retry(self, announcement_id):
+    def fetch_phone_with_retry(self, announcement_id, url):
         """Получает телефонный номер через API с повторными попытками"""
+        domain = self.extract_domain(url)
+        location_url = f"https://{domain}.cian.ru/sale/flat/{announcement_id}/"
+        
         payload = PAYLOAD_TEMPLATE.copy()
         payload.update({
             "announcementId": announcement_id,
-            "locationUrl": f"https://spb.cian.ru/sale/flat/{announcement_id}/"
+            "locationUrl": location_url,
+            "refererUrl": location_url
         })
         
         attempts = 0
@@ -72,21 +88,20 @@ class CianPhoneParser:
                 if "phone" in data and data["phone"]:
                     return data
                 else:
-                    print(f"Попытка {attempts+1}: Пустой ответ для ID {announcement_id}")
+                    self._log(f"Попытка {attempts+1}: Пустой ответ для ID {announcement_id}")
             
             except RequestException as e:
-                print(f"Попытка {attempts+1}: Ошибка запроса для ID {announcement_id}: {str(e)}")
+                self._log(f"Попытка {attempts+1}: Ошибка запроса для ID {announcement_id}: {str(e)}")
             except json.JSONDecodeError:
-                print(f"Попытка {attempts+1}: Невалидный JSON для ID {announcement_id}")
+                self._log(f"Попытка {attempts+1}: Невалидный JSON для ID {announcement_id}")
             
             attempts += 1
             if attempts < max_attempts:
-                time.sleep(5)  # Пауза перед следующей попыткой
+                time.sleep(5)
         
         return None
     
     def export_phones_to_txt(self):
-        """Экспортирует номера в текстовый файл"""
         txt_file = "output/phones.txt"
         success_count = sum(1 for v in self.parsed_data.values() if v.get("phone") and v["phone"] != "не удалось получить")
         
@@ -105,44 +120,41 @@ class CianPhoneParser:
                 f.write(f"ID: {aid}\nТелефон: {phone}\n")
                 f.write("-"*50 + "\n")
         
-        print(f"Номера экспортированы в {txt_file}")
-        print(f"Успешных номеров: {success_count}/{len(self.parsed_data)}")
+        self._log(f"Номера экспортированы в {txt_file}")
+        self._log(f"Успешных номеров: {success_count}/{len(self.parsed_data)}")
     
     def parse(self):
-        """Основной метод парсинга телефонных номеров"""
-        # Извлекаем URL из регионов
         urls = utils.extract_urls_from_regions()
         if not urls:
-            print("Нет URL для обработки!")
+            self._log("Нет URL для обработки!")
             return
         
         total_urls = len(urls)
         request_count = 0
         success_count = 0
-        processed_count = 0  # Счетчик обработанных номеров
+        processed_count = 0
         
-        print(f"Всего URL для обработки: {total_urls}")
-        print(f"Ограничение на количество номеров: {self.max_phones}")
+        self._log(f"Всего URL для обработки: {total_urls}")
+        self._log(f"Ограничение на количество номеров: {self.max_phones}")
         
         for idx, url in enumerate(urls, 1):
-            # Проверяем достижение лимита
             if processed_count >= self.max_phones:
-                print(f"\nДостигнуто ограничение в {self.max_phones} номеров. Парсинг остановлен.")
+                self._log(f"\nДостигнуто ограничение в {self.max_phones} номеров. Парсинг остановлен.")
                 break
             
             aid = utils.extract_id_from_url(url)
             if not aid:
+                self._log(f"Не удалось извлечь ID из URL: {url}")
                 continue
             
-            # Пропускаем уже обработанные
             if aid in self.parsed_data:
-                print(f"[{idx}/{total_urls}] Пропуск существующего ID: {aid}")
+                self._log(f"[{idx}/{total_urls}] Пропуск существующего ID: {aid}")
                 continue
             
-            print(f"[{idx}/{total_urls}] Запрос для ID: {aid}")
-            result = self.fetch_phone_with_retry(aid)
+            self._log(f"[{idx}/{total_urls}] Запрос для ID: {aid}")
+            result = self.fetch_phone_with_retry(aid, url)
             request_count += 1
-            processed_count += 1  # Увеличиваем счетчик обработанных
+            processed_count += 1
             
             if result and "phone" in result:
                 self.parsed_data[aid] = {
@@ -150,34 +162,28 @@ class CianPhoneParser:
                     "notFormattedPhone": result["notFormattedPhone"]
                 }
                 success_count += 1
-                print(f"Успешно: {aid} => {result['phone']}")
+                self._log(f"Успешно: {aid} => {result['phone']}")
             else:
-                # Сохраняем факт неудачи
                 self.parsed_data[aid] = {"phone": "не удалось получить"}
-                print(f"Не удалось получить номер для {aid} после 5 попыток")
+                self._log(f"Не удалось получить номер для {aid} после 5 попыток")
             
-            # Сохранение каждые 5 запросов
             if idx % 5 == 0:
                 self.save_data()
             
-            # Пауза после каждых 50 запросов
             if request_count % 50 == 0:
-                print(f"Выполнено {request_count} запросов. Ожидание 15 секунд...")
+                self._log(f"Выполнено {request_count} запросов. Ожидание 15 секунд...")
                 time.sleep(15)
         
-        # Финальное сохранение
         self.save_data()
         
-        # Расчет времени выполнения
         end_time = datetime.now()
         duration = end_time - self.start_time
         
-        print("\n" + "="*50)
-        print(f"Парсинг завершен: {end_time}")
-        print(f"Общее время выполнения: {duration}")
-        print(f"Обработано номеров: {processed_count}/{self.max_phones}")
-        print(f"Успешных номеров: {success_count}/{processed_count}")
-        print("="*50 + "\n")
+        self._log("\n" + "="*50)
+        self._log(f"Парсинг завершен: {end_time}")
+        self._log(f"Общее время выполнения: {duration}")
+        self._log(f"Обработано номеров: {processed_count}/{self.max_phones}")
+        self._log(f"Успешных номеров: {success_count}/{processed_count}")
+        self._log("="*50 + "\n")
         
-        # Экспорт в текстовый файл
         self.export_phones_to_txt()

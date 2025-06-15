@@ -1,0 +1,5 @@
+aiogram==3.0.0b7
+python-dotenv==1.0.0
+requests==2.32.4
+beautifulsoup4==4.13.4
+cianparser==0.1.4

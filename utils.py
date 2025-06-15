@@ -97,3 +97,9 @@ def finish_parsing():
     lock_file = "output/parsing.lock"
     if os.path.exists(lock_file):
         os.remove(lock_file)
+        
+def extract_domain_from_url(url):
+    """Извлекает региональный поддомен из URL"""
+    import re
+    match = re.search(r'https?://([a-z]+)\.cian\.ru', url)
+    return match.group(1) if match else "www"

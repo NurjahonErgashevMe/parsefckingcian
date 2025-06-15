@@ -2,12 +2,11 @@ import os
 import json
 import time
 from datetime import datetime
-import utils  # Используем абсолютный импорт
+import utils
 import parser_ads
 import phones_parser
 
 def main():
-    """Основная логика приложения"""
     utils.ensure_output_dir()
     region_file = utils.get_region_file()
     
@@ -18,7 +17,6 @@ def main():
     # Проверяем наличие файла с данными
     if os.path.exists(region_file):
         try:
-            # Проверяем, содержит ли файл данные
             with open(region_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
@@ -27,23 +25,19 @@ def main():
                 parser = phones_parser.CianPhoneParser()
                 parser.parse()
                 return
-                
-        except (json.JSONDecodeError, KeyError):
-            print("Ошибка чтения файла регионов. Будет выполнен перепарсинг.")
+        
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Ошибка чтения файла регионов: {str(e)}. Будет выполнен перепарсинг.")
     
-    # Если данных нет или файл поврежден
     print("Файл с объявлениями отсутствует или пуст.")
     
-    # Проверяем, не запущен ли уже парсинг
     if utils.is_parsing_in_progress():
         print("Парсинг объявлений уже выполняется. Ожидание завершения...")
         
-        # Ожидаем завершения парсинга
         while utils.is_parsing_in_progress():
-            time.sleep(30)  # Проверяем каждые 30 секунд
+            time.sleep(30)
             print("Ожидание...")
         
-        # После завершения запускаем парсинг телефонов
         print("Парсинг объявлений завершен! Начинаем парсинг телефонов...")
         parser = phones_parser.CianPhoneParser()
         parser.parse()
@@ -51,7 +45,6 @@ def main():
         print("Запускаем парсинг объявлений...")
         if parser_ads.parse_cian_ads():
             print("Начинаем парсинг телефонов...")
-            # parser = CianPhoneParser(max_phones=0)  # 0 = без ограничений
             parser = phones_parser.CianPhoneParser()
             parser.parse()
 
