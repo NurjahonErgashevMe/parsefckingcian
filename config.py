@@ -1,7 +1,7 @@
 import os
 
 # Конфигурационные параметры
-OUTPUT_DIR = "data"
+OUTPUT_DIR = "output"
 REGIONS_FILE = os.path.join(OUTPUT_DIR, "regions.json")
 CODES_FILE = os.path.join(OUTPUT_DIR, "codes.txt")
 PHONES_FILE = os.path.join(OUTPUT_DIR, "data.json")
@@ -31,6 +31,5 @@ PAYLOAD_TEMPLATE = {
     "analyticClientId": "GA1.1.74252020.1749983650",
     "utm": "%7B%22utm_source%22%3A+%22direct%22%2C+%22utm_medium%22%3A+%22None%22%7D"
 }
-
 # Создаем директорию для данных
 os.makedirs(OUTPUT_DIR, exist_ok=True)

@@ -5,21 +5,8 @@ import re
 from datetime import datetime
 from requests.exceptions import RequestException
 import utils
-
-API_URL = "https://api.cian.ru/newbuilding-dynamic-calltracking/v1/get-dynamic-phone"
-HEADERS = {
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-}
-PAYLOAD_TEMPLATE = {
-    "blockId": 13319,
-    "platformType": "webDesktop",
-    "pageType": "offerCard",
-    "placeType": "ContactsAside",
-    "refererUrl": "",
-    "analyticClientId": "GA1.1.74252020.1749983650",
-    "utm": "%7B%22utm_source%22%3A+%22direct%22%2C+%22utm_medium%22%3A+%22None%22%7D"
-}
+import config
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 class CianPhoneParser:
     def __init__(self, max_phones=50, log_callback=None):
@@ -27,6 +14,7 @@ class CianPhoneParser:
         self.parsed_data = {}
         self.max_phones = max_phones
         self.log_callback = log_callback
+        self.payload_template = config.PAYLOAD_TEMPLATE.copy()
         self.load_existing_data()
         self.start_time = datetime.now()
         self._log(f"[{self.start_time}] Начало парсинга телефонных номеров")
@@ -59,12 +47,123 @@ class CianPhoneParser:
             json.dump({"data": self.parsed_data}, f, ensure_ascii=False, indent=2)
         self._log(f"[{datetime.now()}] Сохранено {len(self.parsed_data)} номеров")
     
+    def activate_with_playwright(self, announcement_id, url):
+        """Активирует API через браузер и возвращает новый payload"""
+        self._log(f"Активация через браузер для ID: {announcement_id}")
+        result = None
+        
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context()
+                page = context.new_page()
+                
+                # Переменные для перехвата данных
+                intercepted_payload = None
+                intercepted_response = None
+                
+                # Перехватываем запросы к API
+                def handle_request(route, request):
+                    nonlocal intercepted_payload
+                    if request.url == config.API_URL and request.method == "POST":
+                        intercepted_payload = request.post_data_json
+                    route.continue_()
+                
+                # Перехватываем ответы API
+                def handle_response(response):
+                    nonlocal intercepted_response
+                    if response.url == config.API_URL and response.request.method == "POST":
+                        intercepted_response = response
+                
+                page.route("**/*", handle_request)
+                page.on("response", handle_response)
+                
+                # Переходим на страницу объявления
+                page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                
+                # Ожидаем и кликаем кнопку контактов
+                try:
+                    # Используем правильный селектор data-testid
+                    page.wait_for_selector('[data-testid="contacts-button"]', state="visible", timeout=15000)
+                    
+                    # Дополнительная проверка, что кнопка кликабельна
+                    page.evaluate('''() => {
+                        const btn = document.querySelector('[data-testid="contacts-button"]');
+                        if (btn) {
+                            btn.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        }
+                    }''')
+                    
+                    # Кликаем с проверкой видимости
+                    page.click('[data-testid="contacts-button"]', timeout=5000)
+                    self._log("Кнопка контактов нажата")
+                except PlaywrightTimeoutError:
+                    self._log("Таймаут ожидания кнопки контактов")
+                    # Попробуем альтернативный метод клика
+                    try:
+                        page.evaluate('''() => {
+                            const btn = document.querySelector('[data-testid="contacts-button"]');
+                            if (btn) {
+                                btn.click();
+                                return true;
+                            }
+                            return false;
+                        }''')
+                        self._log("Клик выполнен через evaluate")
+                    except:
+                        self._log("Не удалось выполнить клик через evaluate")
+                
+                # Ждем появления номера или API-ответа
+                try:
+                    # Ожидаем либо появления номера, либо ответа API
+                    page.wait_for_selector('.phone-number', state="attached", timeout=10000)
+                    self._log("Номер телефона появился на странице")
+                except PlaywrightTimeoutError:
+                    self._log("Таймаут ожидания номера телефона")
+                
+                # Дополнительное время для перехвата ответа
+                page.wait_for_timeout(5000)
+                
+                # Получаем результат если перехватили ответ
+                if intercepted_response:
+                    try:
+                        result = intercepted_response.json()
+                        self._log(f"Получен ответ API через браузер: {result.get('phone', 'N/A')}")
+                    except json.JSONDecodeError:
+                        self._log("Ошибка декодирования JSON ответа")
+                
+                # Если ответ не пришел, пробуем извлечь номер со страницы
+                if not result or "phone" not in result:
+                    try:
+                        phone_element = page.query_selector('.phone-number')
+                        if phone_element:
+                            phone_text = phone_element.inner_text()
+                            self._log(f"Извлечен номер со страницы: {phone_text}")
+                            result = {"phone": phone_text, "notFormattedPhone": phone_text}
+                    except:
+                        self._log("Не удалось извлечь номер со страницы")
+                
+                # Закрываем браузер
+                browser.close()
+                
+                # Возвращаем результат и payload
+                if intercepted_payload:
+                    # Удаляем уникальные поля из payload
+                    clean_payload = {k: v for k, v in intercepted_payload.items() 
+                                    if k not in ["announcementId", "locationUrl", "refererUrl"]}
+                    return result, clean_payload
+        
+        except Exception as e:
+            self._log(f"Ошибка при работе с браузером: {str(e)}")
+        
+        return None, None
+
     def fetch_phone_with_retry(self, announcement_id, url):
-        """Получает телефонный номер через API с повторными попытками"""
+        """Получает телефонный номер через API с повторными попытками и активацией через браузер"""
         domain = self.extract_domain(url)
         location_url = f"https://{domain}.cian.ru/sale/flat/{announcement_id}/"
         
-        payload = PAYLOAD_TEMPLATE.copy()
+        payload = self.payload_template.copy()
         payload.update({
             "announcementId": announcement_id,
             "locationUrl": location_url,
@@ -72,13 +171,13 @@ class CianPhoneParser:
         })
         
         attempts = 0
-        max_attempts = 5
+        max_attempts = 3
         
         while attempts < max_attempts:
             try:
                 response = requests.post(
-                    API_URL,
-                    headers=HEADERS,
+                    config.API_URL,
+                    headers=config.HEADERS,
                     json=payload,
                     timeout=15
                 )
@@ -97,7 +196,34 @@ class CianPhoneParser:
             
             attempts += 1
             if attempts < max_attempts:
-                time.sleep(5)
+                time.sleep(2)
+        
+        # Если обычные попытки не удались, пробуем активацию через браузер
+        self._log(f"Активация через браузер для ID {announcement_id}")
+        result, new_payload = self.activate_with_playwright(announcement_id, url)
+        
+        # Обновляем payload если получили новый
+        if new_payload:
+            self.payload_template.update(new_payload)
+            self._log(f"Обновлен payload_template: {json.dumps(self.payload_template, indent=2)}")
+        
+        # Если получили результат через браузер
+        if result and "phone" in result and result["phone"]:
+            return result
+        
+        # Делаем финальный запрос после активации
+        try:
+            response = requests.post(
+                config.API_URL,
+                headers=config.HEADERS,
+                json=payload,
+                timeout=15
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data
+        except Exception as e:
+            self._log(f"Финальный запрос после активации не удался: {str(e)}")
         
         return None
     
@@ -159,13 +285,13 @@ class CianPhoneParser:
             if result and "phone" in result:
                 self.parsed_data[aid] = {
                     "phone": result["phone"],
-                    "notFormattedPhone": result["notFormattedPhone"]
+                    "notFormattedPhone": result.get("notFormattedPhone", "")
                 }
                 success_count += 1
                 self._log(f"Успешно: {aid} => {result['phone']}")
             else:
                 self.parsed_data[aid] = {"phone": "не удалось получить"}
-                self._log(f"Не удалось получить номер для {aid} после 5 попыток")
+                self._log(f"Не удалось получить номер для {aid}")
             
             if idx % 5 == 0:
                 self.save_data()
