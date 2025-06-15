@@ -91,7 +91,11 @@ def run_parser():
                 
                 if "data" in data and len(data["data"]) > 0:
                     log_callback(f"Найдено {len(data['data'])} объявлений. Начинаем парсинг телефонов...")
-                    parser = phones_parser.CianPhoneParser(log_callback=log_callback)
+                    # Передаем флаг очистки файлов
+                    parser = phones_parser.CianPhoneParser(
+                        log_callback=log_callback,
+                        clear_existing=True
+                    )
                     parser.parse()
                     return
                     
@@ -108,13 +112,21 @@ def run_parser():
                 log_callback("Ожидание...")
             
             log_callback("Парсинг объявлений завершен! Начинаем парсинг телефонов...")
-            parser = phones_parser.CianPhoneParser(log_callback=log_callback)
+            # Передаем флаг очистки файлов
+            parser = phones_parser.CianPhoneParser(
+                log_callback=log_callback,
+                clear_existing=True
+            )
             parser.parse()
         else:
             log_callback("Запускаем парсинг объявлений...")
             if parser_ads.parse_cian_ads(log_callback=log_callback):
                 log_callback("Начинаем парсинг телефонов...")
-                parser = phones_parser.CianPhoneParser(log_callback=log_callback)
+                # Передаем флаг очистки файлов
+                parser = phones_parser.CianPhoneParser(
+                    log_callback=log_callback,
+                    clear_existing=True
+                )
                 parser.parse()
     
     except Exception as e:
@@ -173,12 +185,15 @@ async def log_updater(chat_id: int):
     
     # Отправляем результат
     try:
-        file = FSInputFile("output/phones.txt")
-        await bot.send_document(
-            chat_id=chat_id,
-            document=file,
-            caption="📄 Результат парсинга"
-        )
+        if os.path.exists("output/phones.txt"):
+            file = FSInputFile("output/phones.txt")
+            await bot.send_document(
+                chat_id=chat_id,
+                document=file,
+                caption="📄 Результат парсинга"
+            )
+        else:
+            await bot.send_message(chat_id, "❌ Файл с результатами не найден")
     except Exception as e:
         await bot.send_message(chat_id, f"❌ Не удалось отправить файл: {str(e)}")
 

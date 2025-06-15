@@ -1,5 +1,6 @@
 import json
 import time
+import os
 import requests
 import re
 from datetime import datetime
@@ -9,16 +10,38 @@ import config
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 class CianPhoneParser:
-    def __init__(self, max_phones=200, log_callback=None):
+    def __init__(self, max_phones=200, log_callback=None, clear_existing=False):
         utils.ensure_output_dir()
         self.parsed_data = {}
         self.max_phones = max_phones
         self.log_callback = log_callback
         self.payload_template = config.PAYLOAD_TEMPLATE.copy()
+        
+        # Очистка старых файлов при необходимости
+        if clear_existing:
+            self._clear_existing_files()
+            
         self.load_existing_data()
         self.start_time = datetime.now()
         self._log(f"[{self.start_time}] Начало парсинга телефонных номеров")
         self._log(f"ОГРАНИЧЕНИЕ: Будет обработано не более {self.max_phones} номеров")
+        if clear_existing:
+            self._log("Старые файлы данных были удалены")
+    
+    def _clear_existing_files(self):
+        """Удаляет существующие файлы данных, чтобы начать парсинг заново"""
+        files_to_remove = [
+            utils.get_phones_file(),  # data.json
+            "output/phones.txt"       # файл экспорта
+        ]
+        
+        for file_path in files_to_remove:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    self._log(f"Удален файл: {file_path}")
+                except Exception as e:
+                    self._log(f"Ошибка при удалении файла {file_path}: {str(e)}")
     
     def _log(self, message):
         if self.log_callback:
@@ -34,12 +57,15 @@ class CianPhoneParser:
     def load_existing_data(self):
         phones_file = utils.get_phones_file()
         try:
-            with open(phones_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                self.parsed_data = data.get("data", {})
-            self._log(f"Загружено {len(self.parsed_data)} существующих номеров")
+            if os.path.exists(phones_file):
+                with open(phones_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.parsed_data = data.get("data", {})
+                self._log(f"Загружено {len(self.parsed_data)} существующих номеров")
+            else:
+                self._log("Файл с номерами не найден, начинаем с чистого листа")
         except (FileNotFoundError, json.JSONDecodeError):
-            self._log("Файл с номерами не найден, начинаем с чистого листа")
+            self._log("Файл с номерами не найден или поврежден, начинаем с чистого листа")
             self.parsed_data = {}
     
     def save_data(self):
@@ -47,7 +73,6 @@ class CianPhoneParser:
             json.dump({"data": self.parsed_data}, f, ensure_ascii=False, indent=2)
         self._log(f"[{datetime.now()}] Сохранено {len(self.parsed_data)} номеров")
     
-
     def activate_with_playwright(self, announcement_id, url):
         """Активирует API через браузер и возвращает новый payload"""
         self._log(f"Активация через браузер для ID: {announcement_id}")
@@ -110,7 +135,8 @@ class CianPhoneParser:
                 
                 # Ждем появления номера или API-ответа
                 try:
-                    page.wait_for_selector('[data-testid="PhoneLink"]', state="attached", timeout=10000)
+                    # Пробуем разные селекторы для номера
+                    page.wait_for_selector('[data-testid="PhoneLink"], .phone-number', state="attached", timeout=10000)
                     self._log("Номер телефона появился на странице")
                 except PlaywrightTimeoutError:
                     self._log("Таймаут ожидания номера телефона")
@@ -122,20 +148,24 @@ class CianPhoneParser:
                 if intercepted_response:
                     try:
                         result = intercepted_response.json()
-                        self._log(f"Получен ответ API через браузер: {result.get('phone', 'N/A')}")
+                        phone_value = result.get('phone', 'N/A')
+                        self._log(f"Получен ответ API через браузер: {phone_value}")
                     except json.JSONDecodeError:
                         self._log("Ошибка декодирования JSON ответа")
                 
                 # Если ответ не пришел, пробуем извлечь номер со страницы
-                if not result or "phone" not in result:
+                if not result or "phone" not in result or not result["phone"]:
                     try:
-                        phone_element = page.query_selector('.phone-number')
+                        # Пробуем разные селекторы для номера
+                        phone_element = page.query_selector('[data-testid="PhoneLink"], .phone-number')
                         if phone_element:
                             phone_text = phone_element.inner_text()
                             self._log(f"Извлечен номер со страницы: {phone_text}")
                             result = {"phone": phone_text, "notFormattedPhone": phone_text}
-                    except:
-                        self._log("Не удалось извлечь номер со страницы")
+                        else:
+                            self._log("Элемент с номером не найден на странице")
+                    except Exception as e:
+                        self._log(f"Не удалось извлечь номер со страницы: {str(e)}")
                 
                 # Закрываем браузер
                 browser.close()
@@ -238,7 +268,6 @@ class CianPhoneParser:
         
         return None
 
-    
     def export_phones_to_txt(self):
         txt_file = "output/phones.txt"
         success_count = sum(1 for v in self.parsed_data.values() if v.get("phone") and v["phone"] != "не удалось получить")
@@ -294,7 +323,7 @@ class CianPhoneParser:
             request_count += 1
             processed_count += 1
             
-            if result and "phone" in result:
+            if result and "phone" in result and result["phone"]:
                 self.parsed_data[aid] = {
                     "phone": result["phone"],
                     "notFormattedPhone": result.get("notFormattedPhone", "")
