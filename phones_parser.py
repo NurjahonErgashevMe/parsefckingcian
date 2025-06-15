@@ -9,7 +9,7 @@ import config
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 class CianPhoneParser:
-    def __init__(self, max_phones=50, log_callback=None):
+    def __init__(self, max_phones=200, log_callback=None):
         utils.ensure_output_dir()
         self.parsed_data = {}
         self.max_phones = max_phones
@@ -47,6 +47,7 @@ class CianPhoneParser:
             json.dump({"data": self.parsed_data}, f, ensure_ascii=False, indent=2)
         self._log(f"[{datetime.now()}] Сохранено {len(self.parsed_data)} номеров")
     
+
     def activate_with_playwright(self, announcement_id, url):
         """Активирует API через браузер и возвращает новый payload"""
         self._log(f"Активация через браузер для ID: {announcement_id}")
@@ -54,7 +55,7 @@ class CianPhoneParser:
         
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=False)
+                browser = p.chromium.launch(headless=True)
                 context = browser.new_context()
                 page = context.new_page()
                 
@@ -83,23 +84,17 @@ class CianPhoneParser:
                 
                 # Ожидаем и кликаем кнопку контактов
                 try:
-                    # Используем правильный селектор data-testid
                     page.wait_for_selector('[data-testid="contacts-button"]', state="visible", timeout=15000)
-                    
-                    # Дополнительная проверка, что кнопка кликабельна
                     page.evaluate('''() => {
                         const btn = document.querySelector('[data-testid="contacts-button"]');
                         if (btn) {
                             btn.scrollIntoView({behavior: 'smooth', block: 'center'});
                         }
                     }''')
-                    
-                    # Кликаем с проверкой видимости
-                    page.click('[data-testid="contacts-button"]', timeout=5000)
+                    page.click('[data-testid="contacts-button"]')
                     self._log("Кнопка контактов нажата")
                 except PlaywrightTimeoutError:
                     self._log("Таймаут ожидания кнопки контактов")
-                    # Попробуем альтернативный метод клика
                     try:
                         page.evaluate('''() => {
                             const btn = document.querySelector('[data-testid="contacts-button"]');
@@ -115,8 +110,7 @@ class CianPhoneParser:
                 
                 # Ждем появления номера или API-ответа
                 try:
-                    # Ожидаем либо появления номера, либо ответа API
-                    page.wait_for_selector('.phone-number', state="attached", timeout=10000)
+                    page.wait_for_selector('[data-testid="PhoneLink"]', state="attached", timeout=10000)
                     self._log("Номер телефона появился на странице")
                 except PlaywrightTimeoutError:
                     self._log("Таймаут ожидания номера телефона")
@@ -151,7 +145,16 @@ class CianPhoneParser:
                     # Удаляем уникальные поля из payload
                     clean_payload = {k: v for k, v in intercepted_payload.items() 
                                     if k not in ["announcementId", "locationUrl", "refererUrl"]}
-                    return result, clean_payload
+                    
+                    # Сохраняем критические поля из оригинального шаблона
+                    critical_fields = {
+                        "analyticClientId": config.PAYLOAD_TEMPLATE.get("analyticClientId", ""),
+                        "utm": config.PAYLOAD_TEMPLATE.get("utm", "")
+                    }
+                    
+                    # Объединяем payload с критическими полями
+                    merged_payload = {**clean_payload, **critical_fields}
+                    return result, merged_payload
         
         except Exception as e:
             self._log(f"Ошибка при работе с браузером: {str(e)}")
@@ -211,12 +214,20 @@ class CianPhoneParser:
         if result and "phone" in result and result["phone"]:
             return result
         
-        # Делаем финальный запрос после активации
+        # Делаем финальный запрос после активации с обновленным payload
         try:
+            # Используем обновленный шаблон
+            final_payload = self.payload_template.copy()
+            final_payload.update({
+                "announcementId": announcement_id,
+                "locationUrl": location_url,
+                "refererUrl": location_url
+            })
+            
             response = requests.post(
                 config.API_URL,
                 headers=config.HEADERS,
-                json=payload,
+                json=final_payload,
                 timeout=15
             )
             response.raise_for_status()
@@ -226,6 +237,7 @@ class CianPhoneParser:
             self._log(f"Финальный запрос после активации не удался: {str(e)}")
         
         return None
+
     
     def export_phones_to_txt(self):
         txt_file = "output/phones.txt"
