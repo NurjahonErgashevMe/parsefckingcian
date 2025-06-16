@@ -10,12 +10,13 @@ import config
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 class CianPhoneParser:
-    def __init__(self, max_phones=200, log_callback=None, clear_existing=False):
+    def __init__(self, max_phones=50, log_callback=None, clear_existing=False):
         utils.ensure_output_dir()
         self.parsed_data = {}
         self.max_phones = max_phones
         self.log_callback = log_callback
         self.payload_template = config.PAYLOAD_TEMPLATE.copy()
+        self.activated = False  # Флаг, что активация выполнена
         
         # Очистка старых файлов при необходимости
         if clear_existing:
@@ -73,36 +74,27 @@ class CianPhoneParser:
             json.dump({"data": self.parsed_data}, f, ensure_ascii=False, indent=2)
         self._log(f"[{datetime.now()}] Сохранено {len(self.parsed_data)} номеров")
     
-    def activate_with_playwright(self, announcement_id, url):
-        """Активирует API через браузер и возвращает новый payload"""
-        self._log(f"Активация через браузер для ID: {announcement_id}")
-        result = None
+    def activate_payload(self, announcement_id, url):
+        """Активирует и возвращает новый blockId через браузер"""
+        self._log(f"Активация payload через браузер для ID: {announcement_id}")
+        intercepted_payload = None
+        session_cookies = None
         
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(headless=False)
                 context = browser.new_context()
                 page = context.new_page()
-                
-                # Переменные для перехвата данных
-                intercepted_payload = None
-                intercepted_response = None
                 
                 # Перехватываем запросы к API
                 def handle_request(route, request):
                     nonlocal intercepted_payload
                     if request.url == config.API_URL and request.method == "POST":
                         intercepted_payload = request.post_data_json
+                        self._log(f"Перехвачен payload: {intercepted_payload}")
                     route.continue_()
                 
-                # Перехватываем ответы API
-                def handle_response(response):
-                    nonlocal intercepted_response
-                    if response.url == config.API_URL and response.request.method == "POST":
-                        intercepted_response = response
-                
                 page.route("**/*", handle_request)
-                page.on("response", handle_response)
                 
                 # Переходим на страницу объявления
                 page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -133,78 +125,71 @@ class CianPhoneParser:
                     except:
                         self._log("Не удалось выполнить клик через evaluate")
                 
-                # Ждем появления номера или API-ответа
+                # Ждем появления номера
                 try:
-                    # Пробуем разные селекторы для номера
                     page.wait_for_selector('[data-testid="PhoneLink"], .phone-number', state="attached", timeout=10000)
                     self._log("Номер телефона появился на странице")
                 except PlaywrightTimeoutError:
                     self._log("Таймаут ожидания номера телефона")
                 
-                # Дополнительное время для перехвата ответа
+                # Дополнительное время для перехвата
                 page.wait_for_timeout(5000)
-                
-                # Получаем результат если перехватили ответ
-                if intercepted_response:
-                    try:
-                        result = intercepted_response.json()
-                        phone_value = result.get('phone', 'N/A')
-                        self._log(f"Получен ответ API через браузер: {phone_value}")
-                    except json.JSONDecodeError:
-                        self._log("Ошибка декодирования JSON ответа")
-                
-                # Если ответ не пришел, пробуем извлечь номер со страницы
-                if not result or "phone" not in result or not result["phone"]:
-                    try:
-                        # Пробуем разные селекторы для номера
-                        phone_element = page.query_selector('[data-testid="PhoneLink"], .phone-number')
-                        if phone_element:
-                            phone_text = phone_element.inner_text()
-                            self._log(f"Извлечен номер со страницы: {phone_text}")
-                            result = {"phone": phone_text, "notFormattedPhone": phone_text}
-                        else:
-                            self._log("Элемент с номером не найден на странице")
-                    except Exception as e:
-                        self._log(f"Не удалось извлечь номер со страницы: {str(e)}")
                 
                 # Закрываем браузер
                 browser.close()
                 
-                # Возвращаем результат и payload
-                if intercepted_payload:
-                    # Удаляем уникальные поля из payload
-                    clean_payload = {k: v for k, v in intercepted_payload.items() 
-                                    if k not in ["announcementId", "locationUrl", "refererUrl"]}
-                    
-                    # Сохраняем критические поля из оригинального шаблона
-                    critical_fields = {
-                        "analyticClientId": config.PAYLOAD_TEMPLATE.get("analyticClientId", ""),
-                        "utm": config.PAYLOAD_TEMPLATE.get("utm", "")
-                    }
-                    
-                    # Объединяем payload с критическими полями
-                    merged_payload = {**clean_payload, **critical_fields}
-                    return result, merged_payload
+                # Возвращаем только blockId из перехваченного payload
+                if intercepted_payload and "blockId" in intercepted_payload:
+                    return intercepted_payload["blockId"]
         
         except Exception as e:
             self._log(f"Ошибка при работе с браузером: {str(e)}")
         
-        return None, None
+        return None
 
-    def fetch_phone_with_retry(self, announcement_id, url):
-        """Получает телефонный номер через API с повторными попытками и активацией через браузер"""
+    def fetch_phone_with_retry(self, announcement_id, url, block_id=None, direct_phone=None):
+        """Получает телефонный номер через API с повторными попытками"""
+        # Если есть прямой телефон, используем его
+        if direct_phone:
+            formatted_phone = utils.format_phone(direct_phone)
+            not_formatted_phone = re.sub(r'\D', '', direct_phone)
+            self._log(f"Используем прямой телефон для ID {announcement_id}: {formatted_phone}")
+            return {
+                "phone": formatted_phone,
+                "notFormattedPhone": not_formatted_phone
+            }
+        
         domain = self.extract_domain(url)
         location_url = f"https://{domain}.cian.ru/sale/flat/{announcement_id}/"
         
+        # Если активация еще не выполнена, делаем ее для получения нового blockId
+        if not self.activated and block_id is None:
+            self._log("Выполняем первоначальную активацию для получения blockId...")
+            new_block_id = self.activate_payload(announcement_id, url)
+            
+            if new_block_id:
+                # Обновляем только blockId в шаблоне
+                self.payload_template["blockId"] = new_block_id
+                self.activated = True
+                self._log(f"Обновлен blockId: {new_block_id}")
+                self._log(f"Текущий payload_template: {json.dumps(self.payload_template, indent=2)}")
+            else:
+                self._log("Не удалось получить blockId через браузер")
+        
         payload = self.payload_template.copy()
+        # Если передан block_id (из данных объявления), используем его
+        if block_id is not None:
+            payload["blockId"] = block_id
+        
         payload.update({
             "announcementId": announcement_id,
             "locationUrl": location_url,
-            "refererUrl": location_url
         })
         
         attempts = 0
-        max_attempts = 3
+        max_attempts = 6  # Увеличили количество попыток до 6
+        
+        self._log(f"URL запроса: {location_url}")
         
         while attempts < max_attempts:
             try:
@@ -216,55 +201,71 @@ class CianPhoneParser:
                 )
                 response.raise_for_status()
                 data = response.json()
-                
+                                
                 if "phone" in data and data["phone"]:
+                    # Форматируем телефон перед возвратом
+                    data["phone"] = utils.format_phone(data["phone"])
                     return data
                 else:
-                    self._log(f"Попытка {attempts+1}: Пустой ответ для ID {announcement_id}")
+                    self._log(f"Попытка {attempts+1}/{max_attempts}: Пустой ответ для ID {announcement_id}")
             
             except RequestException as e:
-                self._log(f"Попытка {attempts+1}: Ошибка запроса для ID {announcement_id}: {str(e)}")
+                self._log(f"Попытка {attempts+1}/{max_attempts}: Ошибка запроса для ID {announcement_id}: {str(e)}")
             except json.JSONDecodeError:
-                self._log(f"Попытка {attempts+1}: Невалидный JSON для ID {announcement_id}")
+                self._log(f"Попытка {attempts+1}/{max_attempts}: Невалидный JSON для ID {announcement_id}")
             
             attempts += 1
             if attempts < max_attempts:
                 time.sleep(2)
         
-        # Если обычные попытки не удались, пробуем активацию через браузер
-        self._log(f"Активация через браузер для ID {announcement_id}")
-        result, new_payload = self.activate_with_playwright(announcement_id, url)
-        
-        # Обновляем payload если получили новый
-        if new_payload:
-            self.payload_template.update(new_payload)
-            self._log(f"Обновлен payload_template: {json.dumps(self.payload_template, indent=2)}")
-        
-        # Если получили результат через браузер
-        if result and "phone" in result and result["phone"]:
-            return result
-        
-        # Делаем финальный запрос после активации с обновленным payload
+        # Если все 6 попыток не удались, пробуем получить номер через браузер
+        self._log(f"Все {max_attempts} попыток API не удались. Пробуем Playwright для ID {announcement_id}")
         try:
-            # Используем обновленный шаблон
-            final_payload = self.payload_template.copy()
-            final_payload.update({
-                "announcementId": announcement_id,
-                "locationUrl": location_url,
-                "refererUrl": location_url
-            })
-            
-            response = requests.post(
-                config.API_URL,
-                headers=config.HEADERS,
-                json=final_payload,
-                timeout=15
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context()
+                page = context.new_page()
+                
+                # Переходим на страницу объявления
+                page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                
+                # Кликаем кнопку контактов
+                try:
+                    page.wait_for_selector('[data-testid="contacts-button"]', state="visible", timeout=10000)
+                    page.click('[data-testid="contacts-button"]')
+                except:
+                    try:
+                        page.evaluate('''() => {
+                            const btn = document.querySelector('[data-testid="contacts-button"]');
+                            if (btn) btn.click();
+                        }''')
+                    except:
+                        pass
+                
+                # Ждем появления номера
+                try:
+                    page.wait_for_selector('[data-testid="PhoneLink"], .phone-number', state="attached", timeout=10000)
+                except:
+                    pass
+                
+                # Извлекаем номер
+                phone_element = page.query_selector('[data-testid="PhoneLink"], .phone-number')
+                if phone_element:
+                    phone_text = phone_element.inner_text()
+                    # Очищаем номер от лишних символов
+                    phone_text = re.sub(r'[^\d+]', '', phone_text)
+                    self._log(f"Извлечен номер со страницы: {phone_text}")
+                    
+                    # Форматируем телефон
+                    formatted_phone = utils.format_phone(phone_text)
+                    return {
+                        "phone": formatted_phone,
+                        "notFormattedPhone": phone_text
+                    }
+                
+                browser.close()
         except Exception as e:
-            self._log(f"Финальный запрос после активации не удался: {str(e)}")
+            self._log(f"Ошибка при получении номера через браузер: {str(e)}")
         
         return None
 
@@ -318,20 +319,49 @@ class CianPhoneParser:
                 self._log(f"[{idx}/{total_urls}] Пропуск существующего ID: {aid}")
                 continue
             
+            # Извлекаем данные для этого объявления
+            block_id = utils.extract_block_id_from_data(aid)
+            direct_phone = utils.extract_direct_phone_from_data(aid)
+            
             self._log(f"[{idx}/{total_urls}] Запрос для ID: {aid}")
-            result = self.fetch_phone_with_retry(aid, url)
+            self._log(f"BlockId: {block_id}, Прямой телефон: {direct_phone}")
+            
+            # Если есть прямой телефон, используем его
+            if direct_phone:
+                formatted_phone = utils.format_phone(direct_phone)
+                not_formatted_phone = re.sub(r'\D', '', direct_phone)
+                
+                self.parsed_data[aid] = {
+                    "phone": formatted_phone,
+                    "notFormattedPhone": not_formatted_phone,
+                    "source": "direct"
+                }
+                success_count += 1
+                processed_count += 1
+                self._log(f"Использован прямой телефон: {formatted_phone}")
+                # Сохраняем прогресс
+                if idx % 5 == 0:
+                    self.save_data()
+                continue
+            
+            result = self.fetch_phone_with_retry(aid, url, block_id, direct_phone)
             request_count += 1
             processed_count += 1
             
             if result and "phone" in result and result["phone"]:
                 self.parsed_data[aid] = {
                     "phone": result["phone"],
-                    "notFormattedPhone": result.get("notFormattedPhone", "")
+                    "notFormattedPhone": result.get("notFormattedPhone", re.sub(r'\D', '', result["phone"])),
+                    "source": "api"
                 }
                 success_count += 1
                 self._log(f"Успешно: {aid} => {result['phone']}")
             else:
-                self.parsed_data[aid] = {"phone": "не удалось получить"}
+                self.parsed_data[aid] = {
+                    "phone": "не удалось получить",
+                    "notFormattedPhone": "",
+                    "source": "failed"
+                }
                 self._log(f"Не удалось получить номер для {aid}")
             
             if idx % 5 == 0:

@@ -44,7 +44,13 @@ def main():
     else:
         print("Запускаем парсинг объявлений...")
         if parser_ads.parse_cian_ads():
+            print("                            \n")
+            print("============================")
+            print("                            \n")
             print("Начинаем парсинг телефонов...")
+            print("                            \n")
+            print("============================")
+            print("                            \n")
             parser = phones_parser.CianPhoneParser()
             parser.parse()
 

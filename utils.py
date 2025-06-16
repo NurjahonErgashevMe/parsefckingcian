@@ -103,3 +103,98 @@ def extract_domain_from_url(url):
     import re
     match = re.search(r'https?://([a-z]+)\.cian\.ru', url)
     return match.group(1) if match else "www"
+
+def extract_block_id_from_data(announcement_id):
+    """Извлекает blockId из сохраненных данных объявления"""
+    region_file = get_region_file()
+    
+    if not os.path.exists(region_file):
+        return None
+    
+    try:
+        with open(region_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Проверяем структуру: может быть {"data": [...]} или просто список
+        if "data" in data:
+            ads_data = data["data"]
+        elif isinstance(data, list):
+            ads_data = data
+        else:
+            return None
+        
+        # Ищем объявление по ID
+        for item in ads_data:
+            # В данных объявления может быть как строка, так и число. Приводим к строке.
+            if 'id' in item and str(item['id']) == str(announcement_id):
+                return item.get('blockId')
+            # Также проверяем по URL: если в URL есть ID
+            if 'url' in item:
+                extracted_id = extract_id_from_url(item['url'])
+                if extracted_id and extracted_id == str(announcement_id):
+                    return item.get('blockId')
+        
+        return None
+    
+    except Exception:
+        return None
+
+def extract_direct_phone_from_data(announcement_id):
+    """Извлекает прямой телефон из сохраненных данных объявления"""
+    region_file = get_region_file()
+    
+    if not os.path.exists(region_file):
+        return None
+    
+    try:
+        with open(region_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Проверяем структуру: может быть {"data": [...]} или просто список
+        if "data" in data:
+            ads_data = data["data"]
+        elif isinstance(data, list):
+            ads_data = data
+        else:
+            return None
+        
+        # Ищем объявление по ID
+        for item in ads_data:
+            # В данных объявления может быть как строка, так и число. Приводим к строке.
+            if 'id' in item and str(item['id']) == str(announcement_id):
+                return item.get('directPhone')
+            # Также проверяем по URL: если в URL есть ID
+            if 'url' in item:
+                extracted_id = extract_id_from_url(item['url'])
+                if extracted_id and extracted_id == str(announcement_id):
+                    return item.get('directPhone')
+        
+        return None
+    
+    except Exception:
+        return None
+
+def format_phone(phone):
+    """
+    Форматирует телефонный номер в стандартный вид: +7 (XXX) XXX-XX-XX
+    Если номер не соответствует формату, возвращает оригинал
+    """
+    if not phone:
+        return phone
+    
+    # Оставляем только цифры
+    cleaned = re.sub(r'\D', '', phone)
+    
+    # Проверяем российские номера
+    if cleaned.startswith('8') and len(cleaned) == 11:
+        cleaned = '7' + cleaned[1:]
+    
+    if cleaned.startswith('7') and len(cleaned) == 11:
+        return f"+7 ({cleaned[1:4]}) {cleaned[4:7]}-{cleaned[7:9]}-{cleaned[9:11]}"
+    
+    # Международные номера
+    if cleaned.startswith('+') and len(cleaned) > 2:
+        return f"+{cleaned[1:]}"
+    
+    # Неизвестный формат - возвращаем оригинал
+    return phone
