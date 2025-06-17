@@ -1,58 +1,23 @@
 {
   "data": {
-    "315739198": {
-      "phone": "+7 (919) 933-34-41",
-      "notFormattedPhone": "79199333441",
-      "source": "direct"
-    },
-    "313520845": {
-      "phone": "+7 (351) 272-45-50",
-      "notFormattedPhone": "73512724550",
-      "source": "api"
-    },
-    "302097819": {
-      "phone": "+7 (351) 272-45-50",
-      "notFormattedPhone": "73512724550",
-      "source": "api"
-    },
-    "314241358": {
-      "phone": "+7 (912) 380-10-84",
-      "notFormattedPhone": "79123801084",
-      "source": "direct"
-    },
-    "306520951": {
-      "phone": "+7 (982) 980-71-36",
-      "notFormattedPhone": "79829807136",
-      "source": "direct"
-    },
-    "305669125": {
-      "phone": "+7 (912) 391-26-15",
-      "notFormattedPhone": "79123912615",
-      "source": "direct"
-    },
-    "304944368": {
-      "phone": "+7 (919) 921-95-51",
-      "notFormattedPhone": "79199219551",
-      "source": "direct"
-    },
-    "314476503": {
-      "phone": "+7 (345) 221-28-67",
-      "notFormattedPhone": "73452212867",
-      "source": "api"
-    },
-    "310662732": {
-      "phone": "+7 (919) 942-96-81",
-      "notFormattedPhone": "79199429681",
-      "source": "direct"
-    },
-    "302097341": {
+    "302097044": {
       "phone": "+7 (345) 256-96-84",
       "notFormattedPhone": "73452569684",
       "source": "api"
     },
-    "307321560": {
-      "phone": "+7 (351) 278-03-94",
-      "notFormattedPhone": "73512780394",
+    "318735316": {
+      "phone": "+7 (345) 221-27-52",
+      "notFormattedPhone": "73452212752",
+      "source": "api"
+    },
+    "302096995": {
+      "phone": "+7 (345) 256-96-84",
+      "notFormattedPhone": "73452569684",
+      "source": "api"
+    },
+    "314480089": {
+      "phone": "+7 (351) 220-83-22",
+      "notFormattedPhone": "73512208322",
       "source": "api"
     },
     "317466665": {
@@ -60,85 +25,35 @@
       "notFormattedPhone": "73512208322",
       "source": "api"
     },
-    "314617040": {
-      "phone": "+7 (919) 933-34-41",
-      "notFormattedPhone": "79199333441",
-      "source": "direct"
-    },
-    "308577642": {
-      "phone": "+7 (345) 256-96-84",
-      "notFormattedPhone": "73452569684",
+    "317156344": {
+      "phone": "+7 (345) 221-25-20",
+      "notFormattedPhone": "73452212520",
       "source": "api"
     },
-    "302097181": {
-      "phone": "+7 (345) 256-96-84",
-      "notFormattedPhone": "73452569684",
+    "314480005": {
+      "phone": "+7 (351) 220-83-22",
+      "notFormattedPhone": "73512208322",
       "source": "api"
     },
-    "313048696": {
-      "phone": "+7 (982) 963-09-73",
-      "notFormattedPhone": "79829630973",
-      "source": "direct"
-    },
-    "294170457": {
-      "phone": "+7 (912) 921-69-89",
-      "notFormattedPhone": "79129216989",
-      "source": "direct"
-    },
-    "317926100": {
-      "phone": "+7 (351) 272-42-95",
-      "notFormattedPhone": "73512724295",
+    "318129704": {
+      "phone": "+7 (345) 265-86-51",
+      "notFormattedPhone": "73452658651",
       "source": "api"
-    },
-    "314713592": {
-      "phone": "+7 (919) 933-34-41",
-      "notFormattedPhone": "79199333441",
-      "source": "direct"
     },
     "310261716": {
       "phone": "+7 (345) 256-96-84",
       "notFormattedPhone": "73452569684",
       "source": "api"
     },
-    "312407977": {
-      "phone": "+7 (351) 272-45-50",
-      "notFormattedPhone": "73512724550",
+    "316509068": {
+      "phone": "+7 (345) 265-82-19",
+      "notFormattedPhone": "73452658219",
       "source": "api"
     },
-    "318366024": {
-      "phone": "+7 (919) 942-60-28",
-      "notFormattedPhone": "79199426028",
-      "source": "direct"
-    },
-    "315904729": {
-      "phone": "+7 (982) 972-10-59",
-      "notFormattedPhone": "79829721059",
-      "source": "direct"
-    },
-    "317456481": {
-      "phone": "+7 (919) 933-34-41",
-      "notFormattedPhone": "79199333441",
-      "source": "direct"
-    },
-    "306786004": {
-      "phone": "+7 (912) 921-69-89",
-      "notFormattedPhone": "79129216989",
-      "source": "direct"
-    },
-    "304187897": {
-      "phone": "+7 (919) 932-90-77",
-      "notFormattedPhone": "79199329077",
-      "source": "direct"
-    },
-    "314191657": {
-      "phone": "+7 (982) 781-98-92",
-      "notFormattedPhone": "79827819892",
-      "source": "direct"
-    },
-    "318421921": {
-      "phone": "+7 (919) 933-34-41",
-      "notFormattedPhone": "79199333441",
-      "source": "direct"
+    "314476503": {
+      "phone": "+7 (345) 221-28-67",
+      "notFormattedPhone": "73452212867",
+      "source": "api"
     }
   }
 }

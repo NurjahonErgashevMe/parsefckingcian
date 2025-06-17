@@ -14,7 +14,7 @@ def _log(log_callback, message):
         print(message)
 
 def get_block_id_and_phone(url, log_callback=None):
-    """Извлекает blockId и/или телефон из HTML страницы объявления"""
+    """Извлекает blockId и/или телефон из HTML страницы объявления ТОЛЬКО ДЛЯ ЗАСТРОЙЩИКОВ"""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
@@ -71,7 +71,7 @@ def parse_cian_ads(log_callback=None):
         # Создаем lock-файл
         utils.start_parsing()
         
-        # Парсим данные
+        # Парсим данные БЕЗ дополнительных запросов
         parser = cianparser.CianParser(location="Тюмень")
         data = parser.get_flats(deal_type="sale", rooms=(1,2,3,4), additional_settings={"start_page":1, "end_page":1})
         
@@ -80,8 +80,11 @@ def parse_cian_ads(log_callback=None):
             if 'url' in item and not item['url'].startswith('http'):
                 item['url'] = f"https://www.cian.ru{item['url']}"
         
-        # Получаем blockId и телефон для каждого объявления
-        for item in data:
+        # Фильтруем ТОЛЬКО застройщиков
+        developer_data = [item for item in data if item.get('author_type') == "developer"]
+        
+        # Получаем blockId и телефон ТОЛЬКО для застройщиков
+        for item in developer_data:
             url = item.get('url')
             if url:
                 block_id, phone = get_block_id_and_phone(url, log_callback)
@@ -93,17 +96,20 @@ def parse_cian_ads(log_callback=None):
                 item['blockId'] = None
                 item['directPhone'] = None
         
-        with open(utils.get_region_file(), 'w', encoding='utf-8') as f:
+        # Сохраняем ВСЕ данные (но только застройщики имеют blockId и directPhone)
+        region_file = utils.get_region_file()
+        with open(region_file, 'w', encoding='utf-8') as f:
             json.dump({"data": data}, f, ensure_ascii=False, indent=2)
         
-        log_message = f"[{datetime.now()}] Успешно! Сохранено {len(data)} объявлений"
+        log_message = f"[{datetime.now()}] Успешно! Сохранено {len(data)} объявлений ({len(developer_data)} от застройщиков) в {region_file}"
         _log(log_callback, log_message)
-        return True
+        
+        return True, len(developer_data)
     
     except Exception as e:
         log_message = f"[{datetime.now()}] Ошибка парсинга: {str(e)}"
         _log(log_callback, log_message)
-        return False
+        return False, 0
     finally:
         # Всегда удаляем lock-файл
         utils.finish_parsing()

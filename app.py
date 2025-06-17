@@ -21,7 +21,12 @@ def main():
                 data = json.load(f)
             
             if "data" in data and len(data["data"]) > 0:
-                print(f"Найдено {len(data['data'])} объявлений. Начинаем парсинг телефонов...")
+                # Фильтруем только застройщиков
+                developer_data = [item for item in data["data"] if item.get('author_type') == "developer"]
+                print(f"Найдено {len(data['data'])} объявлений ({len(developer_data)} от застройщиков) в {region_file}")
+                print("="*50)
+                print(f"Начинаем парсинг телефонов для застройщиков...")
+                print("="*50 + "\n")
                 parser = phones_parser.CianPhoneParser()
                 parser.parse()
                 return
@@ -43,14 +48,13 @@ def main():
         parser.parse()
     else:
         print("Запускаем парсинг объявлений...")
-        if parser_ads.parse_cian_ads():
-            print("                            \n")
-            print("============================")
-            print("                            \n")
-            print("Начинаем парсинг телефонов...")
-            print("                            \n")
-            print("============================")
-            print("                            \n")
+        success, developer_count = parser_ads.parse_cian_ads()
+        if success:
+            print("\n" + "="*50)
+            print(f"Данные объявлений сохранены в {region_file}")
+            print(f"Найдено {developer_count} объявлений от застройщиков")
+            print("Начинаем парсинг телефонов для застройщиков...")
+            print("="*50 + "\n")
             parser = phones_parser.CianPhoneParser()
             parser.parse()
 

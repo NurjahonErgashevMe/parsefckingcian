@@ -40,7 +40,7 @@ def extract_id_from_url(url):
     return None
 
 def extract_urls_from_regions():
-    """Извлекает URL из файла regions.json"""
+    """Извлекает URL из файла regions.json ТОЛЬКО ДЛЯ ЗАСТРОЙЩИКОВ"""
     region_file = get_region_file()
     codes_file = get_codes_file()
     
@@ -61,13 +61,16 @@ def extract_urls_from_regions():
             print("Неверный формат файла regions.json")
             return []
         
-        urls = [item['url'] for item in ads_data if 'url' in item]
+        # ФИЛЬТР: только застройщики (developer)
+        developer_ads = [item for item in ads_data if item.get('author_type') == "developer"]
+        
+        urls = [item['url'] for item in developer_ads if 'url' in item]
         unique_urls = list(set(urls))  # Убираем дубликаты
         
         with open(codes_file, 'w', encoding='utf-8') as f:
             f.write("\n".join(unique_urls))
         
-        print(f"Извлечено {len(unique_urls)} уникальных URL")
+        print(f"Извлечено {len(unique_urls)} уникальных URL для застройщиков")
         return unique_urls
     
     except Exception as e:
