@@ -1,4 +1,9 @@
 {
+  "created_at": "2025-06-20T21:51:24.977855Z",
+  "region": {
+    "name": "Москва",
+    "id": "1"
+  },
   "data": [
     {
       "author": "Sminex",

@@ -274,6 +274,20 @@ async def parsing_settings(message: types.Message):
     current_region = utils.get_region_name()
     region_id = utils.get_region_id()
     
+    # Получаем информацию о файле региона
+    region_info = utils.get_region_info()
+    
+    # Форматируем информацию о дате создания
+    created_at_info = ""
+    if region_info and region_info.get("created_at"):
+        try:
+            # Удаляем 'Z' в конце строки и парсим
+            created_at_str = region_info["created_at"].rstrip('Z')
+            created_at = datetime.fromisoformat(created_at_str)
+            created_at_info = f"• <b>Дата создания:</b> {created_at.strftime('%d.%m.%Y %H:%M')}\n"
+        except ValueError:
+            created_at_info = f"• <b>Дата создания:</b> {region_info['created_at']}\n"
+    
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Изменить регион")],
@@ -286,7 +300,8 @@ async def parsing_settings(message: types.Message):
     await message.answer(
         f"⚙️ <b>Текущие настройки парсинга:</b>\n"
         f"• <b>Регион:</b> {current_region}\n"
-        f"• <b>ID региона:</b> {region_id}\n\n"
+        f"• <b>ID региона:</b> {region_id}\n"
+        f"{created_at_info}\n"
         f"Выберите действие:",
         reply_markup=keyboard,
         parse_mode="HTML"

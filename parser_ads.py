@@ -77,7 +77,8 @@ def parse_cian_ads(log_callback=None):
         
         # Получаем регион из настроек
         region_name = utils.get_region_name()
-        log_message = f"📍 Парсинг объявлений для региона: {region_name}"
+        region_id = utils.get_region_id()
+        log_message = f"📍 Парсинг объявлений для региона: {region_name} (ID: {region_id})"
         _log(log_callback, log_message)
         
         # Парсим данные БЕЗ дополнительных запросов
@@ -112,10 +113,20 @@ def parse_cian_ads(log_callback=None):
                 item['blockId'] = None
                 item['directPhone'] = None
         
+        # Формируем данные для сохранения с метаданными
+        result_data = {
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "region": {
+                "name": region_name,
+                "id": region_id
+            },
+            "data": data
+        }
+        
         # Сохраняем ВСЕ данные
         region_file = utils.get_region_file()
         with open(region_file, 'w', encoding='utf-8') as f:
-            json.dump({"data": data}, f, ensure_ascii=False, indent=2)
+            json.dump(result_data, f, ensure_ascii=False, indent=2)
         
         # Считаем статистику по типам авторов
         author_stats = {}

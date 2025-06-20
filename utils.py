@@ -2,6 +2,7 @@ import os
 import re
 import json
 from urllib.parse import urlparse
+from datetime import datetime
 from database import get_setting, set_setting
 
 def ensure_output_dir():
@@ -66,8 +67,15 @@ def extract_urls_from_regions(author_type=None):
         with open(region_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
+        # Проверяем новый формат файла
+        if "data" in data:
+            ads_data = data["data"]
+        else:
+            # Старый формат для обратной совместимости
+            ads_data = data
+        
         urls = []
-        for item in data.get("data", []):
+        for item in ads_data:
             # Фильтруем по типу автора, если указан
             if author_type and item.get('author_type') != author_type:
                 continue
@@ -80,7 +88,8 @@ def extract_urls_from_regions(author_type=None):
                 urls.append(url)
         
         return urls
-    except (json.JSONDecodeError, KeyError):
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"Ошибка при чтении файла регионов: {str(e)}")
         return []
 
 def extract_block_id_from_data(announcement_id):
@@ -94,13 +103,21 @@ def extract_block_id_from_data(announcement_id):
         with open(region_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        for item in data.get("data", []):
+        # Проверяем новый формат файла
+        if "data" in data:
+            ads_data = data["data"]
+        else:
+            # Старый формат для обратной совместимости
+            ads_data = data
+        
+        for item in ads_data:
             url = item.get('url', '')
             if announcement_id in url:
                 return item.get('blockId')
         
         return None
-    except (json.JSONDecodeError, KeyError):
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"Ошибка при чтении файла регионов: {str(e)}")
         return None
 
 def extract_direct_phone_from_data(announcement_id):
@@ -114,13 +131,21 @@ def extract_direct_phone_from_data(announcement_id):
         with open(region_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        for item in data.get("data", []):
+        # Проверяем новый формат файла
+        if "data" in data:
+            ads_data = data["data"]
+        else:
+            # Старый формат для обратной совместимости
+            ads_data = data
+        
+        for item in ads_data:
             url = item.get('url', '')
             if announcement_id in url:
                 return item.get('directPhone')
         
         return None
-    except (json.JSONDecodeError, KeyError):
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"Ошибка при чтении файла регионов: {str(e)}")
         return None
 
 def format_phone(phone):
@@ -159,3 +184,31 @@ def sanitize_payload(data):
                     sanitized[key] = value
         return sanitized
     return data
+
+def get_region_info():
+    """Возвращает информацию о регионе из файла"""
+    region_file = get_region_file()
+    
+    if not os.path.exists(region_file):
+        return None
+    
+    try:
+        with open(region_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Если файл в новом формате
+        if "region" in data and "created_at" in data:
+            return {
+                "name": data["region"]["name"],
+                "id": data["region"]["id"],
+                "created_at": data["created_at"]
+            }
+        # Старый формат - возвращаем базовую информацию
+        return {
+            "name": get_region_name(),
+            "id": get_region_id(),
+            "created_at": "unknown"
+        }
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"Ошибка при чтении информации о регионе: {str(e)}")
+        return None
