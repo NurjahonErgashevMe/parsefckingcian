@@ -1,0 +1,24 @@
+{
+  "data": {
+    "310555921": {
+      "phone": "+7 (919) 952-54-59",
+      "notFormattedPhone": "79199525459",
+      "source": "html"
+    },
+    "318870516": {
+      "phone": "+7 (919) 932-43-75",
+      "notFormattedPhone": "79199324375",
+      "source": "html"
+    },
+    "316148135": {
+      "phone": "+7 (919) 952-09-45",
+      "notFormattedPhone": "79199520945",
+      "source": "html"
+    },
+    "313048696": {
+      "phone": "+7 (982) 963-09-73",
+      "notFormattedPhone": "79829630973",
+      "source": "html"
+    }
+  }
+}

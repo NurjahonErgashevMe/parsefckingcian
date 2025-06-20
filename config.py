@@ -10,6 +10,7 @@ PHONES_FILE = os.path.join(OUTPUT_DIR, "data.json")
 LOCATION = "Тюмень"
 DEAL_TYPE = "sale"
 ROOMS = (1, 2, 3, 4)
+DEFAULT_TYPE="developer"
 
 # Настройки расписания
 SCHEDULE_TIME = "00:00"  # Время запуска по МСК

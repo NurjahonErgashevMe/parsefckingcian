@@ -39,8 +39,8 @@ def extract_id_from_url(url):
     print(f"Не удалось извлечь ID из URL: {clean_url}")
     return None
 
-def extract_urls_from_regions():
-    """Извлекает URL из файла regions.json ТОЛЬКО ДЛЯ ЗАСТРОЙЩИКОВ"""
+def extract_urls_from_regions(author_type=None):
+    """Извлекает URL из файла regions.json с фильтрацией по типу автора"""
     region_file = get_region_file()
     codes_file = get_codes_file()
     
@@ -61,16 +61,23 @@ def extract_urls_from_regions():
             print("Неверный формат файла regions.json")
             return []
         
-        # ФИЛЬТР: только застройщики (developer)
-        developer_ads = [item for item in ads_data if item.get('author_type') == "developer"]
+        # Фильтрация по типу автора
+        if author_type:
+            filtered_ads = [item for item in ads_data if item.get('author_type') == author_type]
+            print(f"Фильтрация по типу '{author_type}': найдено {len(filtered_ads)} объявлений из {len(ads_data)}")
+        else:
+            # Если тип не указан, используем только застройщиков (как было раньше)
+            filtered_ads = [item for item in ads_data if item.get('author_type') == "developer"]
+            print(f"Фильтрация по умолчанию (застройщики): найдено {len(filtered_ads)} объявлений из {len(ads_data)}")
         
-        urls = [item['url'] for item in developer_ads if 'url' in item]
+        urls = [item['url'] for item in filtered_ads if 'url' in item]
         unique_urls = list(set(urls))  # Убираем дубликаты
         
         with open(codes_file, 'w', encoding='utf-8') as f:
             f.write("\n".join(unique_urls))
         
-        print(f"Извлечено {len(unique_urls)} уникальных URL для застройщиков")
+        author_display = author_type if author_type else "застройщики"
+        print(f"Извлечено {len(unique_urls)} уникальных URL для типа '{author_display}'")
         return unique_urls
     
     except Exception as e:
