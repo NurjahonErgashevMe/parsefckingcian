@@ -108,7 +108,7 @@ class CianPhoneParser:
                 "pageType": intercepted_payload.get("pageType", self.current_payload_template.get("pageType", "")),
                 "placeType": intercepted_payload.get("placeType", self.current_payload_template.get("placeType", "")),
                 "refererUrl": intercepted_payload.get("refererUrl", self.current_payload_template.get("refererUrl", "")),
-                "analyticClientId": intercepted_payload.get("analyticClientId", self.current_payload_template.get("analyticClientId", "")),
+                # "analyticClientId": intercepted_payload.get("analyticClientId", self.current_payload_template.get("analyticClientId", "G12.12321.123121D")),
                 "utm": intercepted_payload.get("utm", self.current_payload_template.get("utm", ""))
             })
             

@@ -34,7 +34,7 @@ PAYLOAD_TEMPLATE = {
     "pageType": "offerCard",
     "placeType": "ContactsAside",
     "refererUrl": "",
-    "analyticClientId": "default_analytic_id",  # Будет заменено при активации
+    "analyticClientId": "G12.12321.123121D",  # Будет заменено при активации
     "utm": "default_utm_value"  # Будет заменено при активации
 }
 
