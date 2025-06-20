@@ -176,8 +176,8 @@ class CianPhoneParser:
             json.dump({"data": self.parsed_data}, f, ensure_ascii=False, indent=2)
         self._log(f"💾 [{datetime.now()}] Сохранено {len(self.parsed_data)} номеров")
 
-    def parse_html_for_phone(self, url):
-        """Парсит HTML страницы для получения offerPhone (для НЕ застройщиков)"""
+    def parse_html_for_data(self, url):
+        """Парсит HTML страницы для получения нужных данных в зависимости от типа автора"""
         try:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
@@ -186,36 +186,41 @@ class CianPhoneParser:
             response.raise_for_status()
             html_content = response.text
             
-            # Ищем offerPhone в HTML
-            offer_match = re.search(r'"offerPhone":\s*"([^"]+)"', html_content)
-            if offer_match:
-                phone = offer_match.group(1)
-                formatted_phone = utils.format_phone(phone)
-                self._log(f"📞 Найден offerPhone в HTML: {formatted_phone}")
-                return {
-                    "phone": formatted_phone,
-                    "notFormattedPhone": re.sub(r'\D', '', phone)
-                }
-            
-            self._log(f"❌ offerPhone не найден в HTML для {url}")
-            return None
+            if self.author_type == 'developer':
+                # Для застройщиков ищем siteBlockId
+                site_block_match = re.search(r'"siteBlockId":\s*(\d+)', html_content)
+                if site_block_match:
+                    site_block_id = int(site_block_match.group(1))
+                    self._log(f"🏗️ Найден siteBlockId в HTML: {site_block_id}")
+                    return {
+                        "siteBlockId": site_block_id,
+                        "type": "site_block"
+                    }
+                
+                self._log(f"❌ siteBlockId не найден в HTML для {url}")
+                return None
+            else:
+                # Для остальных типов ищем offerPhone
+                offer_match = re.search(r'"offerPhone":\s*"([^"]+)"', html_content)
+                if offer_match:
+                    phone = offer_match.group(1)
+                    formatted_phone = utils.format_phone(phone)
+                    self._log(f"📞 Найден offerPhone в HTML: {formatted_phone}")
+                    return {
+                        "phone": formatted_phone,
+                        "notFormattedPhone": re.sub(r'\D', '', phone),
+                        "type": "direct_phone"
+                    }
+                
+                self._log(f"❌ offerPhone не найден в HTML для {url}")
+                return None
             
         except Exception as e:
             self._log(f"❌ Ошибка при парсинге HTML: {str(e)}")
             return None
     
-    def fetch_phone_with_retry(self, announcement_id, url, block_id=None, direct_phone=None):
+    def fetch_phone_with_retry(self, announcement_id, url, site_block_id=None):
         """Получает телефонный номер через API с повторными попытками (ТОЛЬКО для застройщиков)"""
-        # Если есть прямой телефон, используем его
-        if direct_phone:
-            formatted_phone = utils.format_phone(direct_phone)
-            not_formatted_phone = re.sub(r'\D', '', direct_phone)
-            self._log(f"📞 Используем прямой телефон для ID {announcement_id}: {formatted_phone}")
-            return {
-                "phone": formatted_phone,
-                "notFormattedPhone": not_formatted_phone
-            }
-        
         domain = self.extract_domain(url)
         location_url = f"https://tyumen.cian.ru/sale/flat/{announcement_id}/"
         
@@ -223,9 +228,10 @@ class CianPhoneParser:
         payload = self.current_payload_template.copy()
         payload = utils.sanitize_payload(payload)
         
-        # Если передан block_id (из данных объявления), используем его
-        if block_id is not None:
-            payload["blockId"] = int(block_id)
+        # Используем siteBlockId как blockId для API запроса
+        if site_block_id is not None:
+            payload["blockId"] = int(site_block_id)
+            self._log(f"🔗 Используем siteBlockId как blockId: {site_block_id}")
         
         payload.update({
             "announcementId": int(announcement_id),
@@ -421,59 +427,58 @@ class CianPhoneParser:
             
             self._log(f"🔍 [{idx}/{total_urls}] Запрос для ID: {aid}")
             
-            # РАЗДЕЛЯЕМ ЛОГИКУ: developer vs НЕ developer
+            # ИСПРАВЛЕННАЯ ЛОГИКА: developer vs НЕ developer
             if self.author_type == 'developer':
-                # Для застройщиков - используем API + браузер
-                block_id = utils.extract_block_id_from_data(aid)
-                direct_phone = utils.extract_direct_phone_from_data(aid)
+                # Для застройщиков - парсим HTML чтобы получить siteBlockId, затем делаем API запрос
+                html_result = self.parse_html_for_data(url)
                 
-                # Если есть прямой телефон, используем его
-                if direct_phone:
-                    formatted_phone = utils.format_phone(direct_phone)
-                    not_formatted_phone = re.sub(r'\D', '', direct_phone)
+                if html_result and html_result.get("type") == "site_block":
+                    site_block_id = html_result["siteBlockId"]
                     
-                    self.parsed_data[aid] = {
-                        "phone": formatted_phone,
-                        "notFormattedPhone": not_formatted_phone,
-                        "source": "direct"
-                    }
-                    success_count += 1
-                    processed_count += 1
-                    self._log(f"📋 Использован прямой телефон: {formatted_phone}")
-                else:
-                    # Используем API запросы
-                    result = self.fetch_phone_with_retry(aid, url, block_id, direct_phone)
+                    # Теперь делаем API запрос с полученным siteBlockId
+                    api_result = self.fetch_phone_with_retry(aid, url, site_block_id)
                     request_count += 1
                     processed_count += 1
                     
-                    if result and "phone" in result and result["phone"]:
+                    if api_result and "phone" in api_result and api_result["phone"]:
                         self.parsed_data[aid] = {
-                            "phone": result["phone"],
-                            "notFormattedPhone": result.get("notFormattedPhone", re.sub(r'\D', '', result["phone"])),
-                            "source": "api"
+                            "phone": api_result["phone"],
+                            "notFormattedPhone": api_result.get("notFormattedPhone", re.sub(r'\D', '', api_result["phone"])),
+                            "source": "api",
+                            "siteBlockId": site_block_id
                         }
                         success_count += 1
-                        self._log(f"✅ Успешно через API: {aid} => {result['phone']}")
+                        self._log(f"✅ Успешно через API (siteBlockId={site_block_id}): {aid} => {api_result['phone']}")
                     else:
                         self.parsed_data[aid] = {
                             "phone": "не удалось получить",
                             "notFormattedPhone": "",
-                            "source": "failed"
+                            "source": "failed",
+                            "siteBlockId": site_block_id
                         }
-                        self._log(f"❌ Не удалось получить номер через API для {aid}")
+                        self._log(f"❌ Не удалось получить номер через API для {aid} (siteBlockId={site_block_id})")
+                else:
+                    # Если не нашли siteBlockId в HTML
+                    processed_count += 1
+                    self.parsed_data[aid] = {
+                        "phone": "не удалось получить",
+                        "notFormattedPhone": "",
+                        "source": "failed"
+                    }
+                    self._log(f"❌ Не найден siteBlockId в HTML для {aid}")
             else:
-                # Для НЕ застройщиков - парсим только HTML
-                result = self.parse_html_for_phone(url)
+                # Для НЕ застройщиков - парсим HTML чтобы получить offerPhone напрямую
+                html_result = self.parse_html_for_data(url)
                 processed_count += 1
                 
-                if result and "phone" in result and result["phone"]:
+                if html_result and html_result.get("type") == "direct_phone":
                     self.parsed_data[aid] = {
-                        "phone": result["phone"],
-                        "notFormattedPhone": result.get("notFormattedPhone", ""),
+                        "phone": html_result["phone"],
+                        "notFormattedPhone": html_result.get("notFormattedPhone", ""),
                         "source": "html"
                     }
                     success_count += 1
-                    self._log(f"✅ Успешно через HTML: {aid} => {result['phone']}")
+                    self._log(f"✅ Успешно через HTML: {aid} => {html_result['phone']}")
                 else:
                     self.parsed_data[aid] = {
                         "phone": "не удалось получить",

@@ -13,8 +13,8 @@ def _log(log_callback, message):
     else:
         print(message)
 
-def get_block_id_and_phone(url, log_callback=None):
-    """Извлекает blockId и/или телефон из HTML страницы объявления"""
+def get_block_id_and_phone(url, author_type, log_callback=None):
+    """Извлекает blockId и/или телефон из HTML страницы объявления в зависимости от типа автора"""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
@@ -26,39 +26,42 @@ def get_block_id_and_phone(url, log_callback=None):
         block_id = None
         phone = None
         
-        # СНАЧАЛА проверяем offerPhone - это готовый номер телефона
-        offer_match = re.search(r'"offerPhone":\s*"([^"]+)"', html_content)
-        if offer_match:
-            phone = offer_match.group(1)
-            msg = f"✅ Найден готовый номер offerPhone: {phone} для {url}"
-            _log(log_callback, msg)
-            return block_id, phone  # Возвращаем сразу, blockId не нужен
-        
-        # Если offerPhone не найден, ищем siteBlockId (для застройщиков)
-        match = re.search(r'"siteBlockId":\s*(\d+)', html_content)
-        if match:
-            block_id = match.group(1)
-            msg = f"Найден blockId: {block_id} для {url}"
-            _log(log_callback, msg)
-        else:
-            msg = f"Ни offerPhone, ни siteBlockId не найдены на странице {url}"
-            _log(log_callback, msg)
-        
-        # Если все еще не нашли телефон, пытаемся извлечь его напрямую из HTML
-        if phone is None:
-            soup = BeautifulSoup(html_content, 'html.parser')
-            phone_element = soup.select_one('[data-testid="PhoneLink"], .phone-number')
-            if phone_element:
-                phone = phone_element.get_text(strip=True)
-                # Очищаем номер от лишних символов
-                phone = re.sub(r'[^\d+]', '', phone)
-                msg = f"Найден прямой телефон из HTML: {phone} для {url}"
+        # ЛОГИКА В ЗАВИСИМОСТИ ОТ ТИПА АВТОРА
+        if author_type == 'developer':
+            # ДЛЯ ЗАСТРОЙЩИКОВ: ищем ТОЛЬКО siteBlockId
+            match = re.search(r'"siteBlockId":\s*(\d+)', html_content)
+            if match:
+                block_id = match.group(1)
+                msg = f"✅ Найден siteBlockId для застройщика: {block_id} для {url}"
                 _log(log_callback, msg)
+            else:
+                msg = f"❌ siteBlockId НЕ найден для застройщика на странице {url}"
+                _log(log_callback, msg)
+        else:
+            # ДЛЯ ОСТАЛЬНЫХ: ищем ТОЛЬКО offerPhone
+            offer_match = re.search(r'"offerPhone":\s*"([^"]+)"', html_content)
+            if offer_match:
+                phone = offer_match.group(1)
+                msg = f"✅ Найден готовый номер offerPhone: {phone} для {url}"
+                _log(log_callback, msg)
+            else:
+                # Если offerPhone не найден, пытаемся извлечь его напрямую из HTML
+                soup = BeautifulSoup(html_content, 'html.parser')
+                phone_element = soup.select_one('[data-testid="PhoneLink"], .phone-number')
+                if phone_element:
+                    phone = phone_element.get_text(strip=True)
+                    # Очищаем номер от лишних символов
+                    phone = re.sub(r'[^\d+]', '', phone)
+                    msg = f"✅ Найден прямой телефон из HTML: {phone} для {url}"
+                    _log(log_callback, msg)
+                else:
+                    msg = f"❌ offerPhone НЕ найден для НЕ-застройщика на странице {url}"
+                    _log(log_callback, msg)
         
         return block_id, phone
     
     except Exception as e:
-        msg = f"Ошибка при получении данных: {str(e)}"
+        msg = f"❌ Ошибка при получении данных: {str(e)}"
         _log(log_callback, msg)
         return None, None
 
@@ -81,13 +84,23 @@ def parse_cian_ads(log_callback=None):
             if 'url' in item and not item['url'].startswith('http'):
                 item['url'] = f"https://www.cian.ru{item['url']}"
         
-        # Получаем blockId и телефон для ВСЕХ объявлений (приоритет offerPhone)
+        # Получаем blockId и телефон для ВСЕХ объявлений В ЗАВИСИМОСТИ ОТ ТИПА АВТОРА
         for item in data:
             url = item.get('url')
-            if url:
-                block_id, phone = get_block_id_and_phone(url, log_callback)
-                item['blockId'] = block_id
-                item['directPhone'] = phone
+            author_type = item.get('author_type')
+            
+            if url and author_type:
+                block_id, phone = get_block_id_and_phone(url, author_type, log_callback)
+                
+                if author_type == 'developer':
+                    # Для застройщиков сохраняем blockId, phone остается None
+                    item['blockId'] = block_id
+                    item['directPhone'] = None
+                else:
+                    # Для остальных сохраняем phone, blockId остается None
+                    item['blockId'] = None
+                    item['directPhone'] = phone
+                
                 # Задержка, чтобы не нагружать сервер
                 time.sleep(1.5)
             else:
@@ -102,6 +115,7 @@ def parse_cian_ads(log_callback=None):
         # Считаем статистику по типам авторов
         author_stats = {}
         phones_found = 0
+        block_ids_found = 0
         
         for item in data:
             author_type = item.get('author_type', 'unknown')
@@ -116,6 +130,7 @@ def parse_cian_ads(log_callback=None):
             
             if item.get('blockId'):
                 author_stats[author_type]['with_blockid'] += 1
+                block_ids_found += 1
         
         # Логируем статистику
         log_message = f"[{datetime.now()}] Успешно! Сохранено {len(data)} объявлений в {region_file}"
@@ -123,9 +138,13 @@ def parse_cian_ads(log_callback=None):
         
         _log(log_callback, "\n📊 СТАТИСТИКА ПО ТИПАМ АВТОРОВ:")
         for author_type, stats in author_stats.items():
-            _log(log_callback, f"  {author_type}: {stats['total']} объявлений, {stats['with_phone']} с телефонами, {stats['with_blockid']} с blockId")
+            if author_type == 'developer':
+                _log(log_callback, f"  🏢 {author_type}: {stats['total']} объявлений, {stats['with_blockid']} с blockId (для API)")
+            else:
+                _log(log_callback, f"  👤 {author_type}: {stats['total']} объявлений, {stats['with_phone']} с готовыми телефонами")
         
-        _log(log_callback, f"\n📞 Всего найдено готовых номеров: {phones_found}/{len(data)}")
+        _log(log_callback, f"\n📞 Всего найдено готовых номеров (НЕ застройщики): {phones_found}")
+        _log(log_callback, f"🔗 Всего найдено blockId (застройщики): {block_ids_found}")
         
         return True, len(data)
     
