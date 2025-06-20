@@ -9,6 +9,22 @@ def ensure_output_dir():
     """Создает папку output если её нет"""
     os.makedirs("output", exist_ok=True)
 
+def clear_parsing_data():
+    """Удаляет все файлы с данными парсинга"""
+    files_to_remove = [
+        get_region_file(),
+        get_phones_file(),
+        "output/phones.txt"
+    ]
+    
+    for file_path in files_to_remove:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"🗑️ Удален файл: {file_path}")
+            except Exception as e:
+                print(f"❌ Ошибка при удалении файла {file_path}: {e}")
+
 def get_region_name():
     """Получает название региона из базы данных"""
     return get_setting('region', 'Тюмень')  # По умолчанию Тюмень
@@ -17,10 +33,21 @@ def get_region_id():
     """Получает ID региона из базы данных"""
     return get_setting('region_id', '4827')  # ID Тюмени по умолчанию
 
+def get_rooms():
+    """Получает список выбранных комнат"""
+    rooms_str = get_setting('rooms', '1,2,3,4')
+    return [int(room) for room in rooms_str.split(',')]
+
 def set_region(region_name, region_id):
     """Устанавливает регион в настройках"""
     set_setting('region', region_name)
     set_setting('region_id', region_id)
+    clear_parsing_data()  # Удаляем старые данные
+
+def set_rooms(rooms):
+    """Устанавливает выбранные комнаты"""
+    set_setting('rooms', ','.join(map(str, rooms)))
+    clear_parsing_data()  # Удаляем старые данные
 
 def get_region_file():
     """Возвращает путь к файлу регионов с ID региона"""

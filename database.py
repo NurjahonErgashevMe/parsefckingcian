@@ -16,6 +16,7 @@ def init_db():
         # Устанавливаем регион по умолчанию (Тюмень)
         default_region = 'Тюмень'
         default_region_id = '4827'
+        default_rooms = '1,2,3,4'  # Комнаты по умолчанию
         
         # Проверяем, есть ли уже настройки
         cursor.execute("SELECT value FROM settings WHERE key = 'region'")
@@ -27,6 +28,10 @@ def init_db():
             cursor.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?)",
                 ('region_id', default_region_id)
+            )
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ('rooms', default_rooms)
             )
         conn.commit()
 

@@ -78,12 +78,15 @@ def parse_cian_ads(log_callback=None):
         # Получаем регион из настроек
         region_name = utils.get_region_name()
         region_id = utils.get_region_id()
+        rooms = utils.get_rooms()
         log_message = f"📍 Парсинг объявлений для региона: {region_name} (ID: {region_id})"
+        _log(log_callback, log_message)
+        log_message = f"🏠 Выбранные комнаты: {', '.join(map(str, rooms))}"
         _log(log_callback, log_message)
         
         # Парсим данные БЕЗ дополнительных запросов
         parser = cianparser.CianParser(location=region_name)
-        data = parser.get_flats(deal_type="sale", rooms=(1,2,3,4), additional_settings={"start_page":1, "end_page":1})
+        data = parser.get_flats(deal_type="sale", rooms=tuple(rooms), additional_settings={"start_page":1, "end_page":1})
         
         # Проверяем и корректируем URL
         for item in data:
@@ -120,6 +123,7 @@ def parse_cian_ads(log_callback=None):
                 "name": region_name,
                 "id": region_id
             },
+            "rooms": rooms,
             "data": data
         }
         

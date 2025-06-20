@@ -40,6 +40,9 @@ class AuthorTypeCallback(CallbackData, prefix="author"):
 class RegionState(StatesGroup):
     waiting_region_name = State()
 
+class RoomState(StatesGroup):
+    selecting_rooms = State()
+
 async def delete_file_after_delay(file_path: str, delay_seconds: int = 10):
     """Удаляет файл через указанное количество секунд"""
     try:
@@ -190,7 +193,7 @@ def create_author_type_keyboard():
         [
             InlineKeyboardButton(
                 text="👔 Риэлторы",
-                callback_data=AuthorTypeCallback(type="realtor").pack()
+                callback_data=AuthorTypeCallback(type="rieltor").pack()
             )
         ],
         [
@@ -229,6 +232,38 @@ def generate_regions_file():
             f.write(f"• {region[0]} (ID: {region[1]})\n")
     
     return filename
+
+def create_rooms_keyboard(selected_rooms):
+    """Создает клавиатуру для выбора комнат"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+    
+    # Создаем кнопки для каждой комнаты
+    buttons_row = []
+    for room in range(1, 7):
+        # Добавляем галочку, если комната выбрана
+        emoji = "✅" if room in selected_rooms else ""
+        buttons_row.append(
+            InlineKeyboardButton(
+                text=f"{room} {emoji}",
+                callback_data=f"room_{room}"
+            )
+        )
+        
+        # Каждые 3 кнопки начинаем новую строку
+        if len(buttons_row) == 3:
+            keyboard.inline_keyboard.append(buttons_row)
+            buttons_row = []
+    
+    # Добавляем оставшиеся кнопки
+    if buttons_row:
+        keyboard.inline_keyboard.append(buttons_row)
+    
+    # Кнопка сохранения
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(text="💾 Сохранить настройки", callback_data="save_rooms")
+    ])
+    
+    return keyboard
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
@@ -273,6 +308,7 @@ async def parsing_settings(message: types.Message):
     """Обработчик кнопки настроек парсинга"""
     current_region = utils.get_region_name()
     region_id = utils.get_region_id()
+    current_rooms = utils.get_rooms()
     
     # Получаем информацию о файле региона
     region_info = utils.get_region_info()
@@ -292,6 +328,7 @@ async def parsing_settings(message: types.Message):
         keyboard=[
             [KeyboardButton(text="Изменить регион")],
             [KeyboardButton(text="Список регионов")],
+            [KeyboardButton(text="Выбрать комнаты")],
             [KeyboardButton(text="Назад в меню")]
         ],
         resize_keyboard=True
@@ -301,6 +338,7 @@ async def parsing_settings(message: types.Message):
         f"⚙️ <b>Текущие настройки парсинга:</b>\n"
         f"• <b>Регион:</b> {current_region}\n"
         f"• <b>ID региона:</b> {region_id}\n"
+        f"• <b>Комнаты:</b> {', '.join(map(str, current_rooms))}\n"
         f"{created_at_info}\n"
         f"Выберите действие:",
         reply_markup=keyboard,
@@ -314,7 +352,7 @@ async def change_region(message: types.Message, state: FSMContext):
     
     # Отправляем подсказку с популярными регионами
     popular_regions = [
-        "Москва", "Санкт-Петербург", "Тюмень" , "Новосибирск", "Екатеринбург", "Казань",
+        "Москва", "Санкт-Петербург", "Новосибирск", "Екатеринбург", "Казань",
         "Нижний Новгород", "Челябинск", "Самара", "Омск", "Ростов-на-Дону"
     ]
     
@@ -359,10 +397,65 @@ async def send_regions_list(message: types.Message):
     except Exception as e:
         await message.answer(f"❌ Не удалось сгенерировать список регионов: {str(e)}")
 
+@dp.message(F.text == "Выбрать комнаты")
+async def select_rooms(message: types.Message, state: FSMContext):
+    """Обработчик кнопки выбора комнат"""
+    current_rooms = utils.get_rooms()
+    keyboard = create_rooms_keyboard(current_rooms)
+    
+    await message.answer(
+        "Выберите количество комнат для парсинга:\n\n"
+        "Нажмите на комнату, чтобы добавить/удалить её из выборки. "
+        "Значок ✅ означает, что комната выбрана.\n\n"
+        "После выбора нажмите '💾 Сохранить настройки'.",
+        reply_markup=keyboard
+    )
+    
+    # Сохраняем текущий выбор в состояние
+    await state.set_data({"selected_rooms": current_rooms})
+    await state.set_state(RoomState.selecting_rooms)
+
+@dp.callback_query(RoomState.selecting_rooms, F.data.startswith("room_"))
+async def toggle_room(callback: types.CallbackQuery, state: FSMContext):
+    """Обработчик переключения комнаты"""
+    room_num = int(callback.data.split("_")[1])
+    state_data = await state.get_data()
+    selected_rooms = state_data.get("selected_rooms", [])
+    
+    if room_num in selected_rooms:
+        selected_rooms.remove(room_num)
+    else:
+        selected_rooms.append(room_num)
+        selected_rooms.sort()
+    
+    # Обновляем состояние
+    await state.update_data(selected_rooms=selected_rooms)
+    
+    # Обновляем клавиатуру
+    keyboard = create_rooms_keyboard(selected_rooms)
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
+    await callback.answer()
+
+@dp.callback_query(RoomState.selecting_rooms, F.data == "save_rooms")
+async def save_rooms(callback: types.CallbackQuery, state: FSMContext):
+    """Обработчик сохранения выбранных комнат"""
+    state_data = await state.get_data()
+    selected_rooms = state_data.get("selected_rooms", [])
+    
+    # Сохраняем настройки
+    utils.set_rooms(selected_rooms)
+    
+    await callback.answer("✅ Настройки комнат сохранены!")
+    await callback.message.delete()
+    await state.clear()
+    
+    # Возвращаем в меню настроек
+    await parsing_settings(callback.message)
+
 @dp.message(RegionState.waiting_region_name)
 async def process_region_name(message: types.Message, state: FSMContext):
     """Обработчик ввода названия региона"""
-    # Проверяем, если пользователь хочет вернуться
+    # Проверяем, если пользователь хочет вернутьс
     if message.text == "Назад в настройки":
         await state.clear()
         await parsing_settings(message)
