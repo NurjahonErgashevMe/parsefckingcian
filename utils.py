@@ -201,3 +201,11 @@ def format_phone(phone):
     
     # Неизвестный формат - возвращаем оригинал
     return phone
+
+def sanitize_payload(payload):
+    """Удаляет неподдерживаемые символы из значений payload."""
+    for key, value in payload.items():
+        if isinstance(value, str):
+            # Удаляем неподдерживаемые символы
+            payload[key] = value.encode('latin-1', 'ignore').decode('latin-1')
+    return payload

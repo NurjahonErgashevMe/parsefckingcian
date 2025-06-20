@@ -15,8 +15,8 @@ class CianPhoneParser:
         self.parsed_data = {}
         self.max_phones = max_phones
         self.log_callback = log_callback
-        self.payload_template = config.PAYLOAD_TEMPLATE.copy()
-        self.activated = False  # Флаг, что активация выполнена
+        self.current_headers = config.HEADERS.copy()
+        self.current_payload_template = config.PAYLOAD_TEMPLATE.copy()
         
         # Очистка старых файлов при необходимости
         if clear_existing:
@@ -28,7 +28,96 @@ class CianPhoneParser:
         self._log(f"ОГРАНИЧЕНИЕ: Будет обработано не более {self.max_phones} номеров")
         if clear_existing:
             self._log("Старые файлы данных были удалены")
-    
+        
+        # Выполняем активацию через браузер при инициализации
+        self._activate_browser()
+
+    def _activate_browser(self):
+        """Активирует парсер через браузер: перехватывает запрос к API, чтобы получить актуальные данные"""
+        self._log("Запуск браузера для активации парсера...")
+        
+        # Получаем список URL, берем первый для активации
+        urls = utils.extract_urls_from_regions()
+        if not urls:
+            url = "https://tyumen.cian.ru/sale/flat/307997699/"  # дефолтный URL
+            self._log(f"Нет URL в регионах, используем дефолтный URL: {url}")
+        else:
+            url = urls[0]
+            self._log(f"Используем первый URL из списка для активации: {url}")
+        
+        intercepted_headers = None
+        intercepted_payload = None
+        
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context()
+                page = context.new_page()
+                
+                # Перехватываем запросы к API
+                def handle_request(route, request):
+                    nonlocal intercepted_headers, intercepted_payload
+                    if request.url == config.API_URL and request.method == "POST":
+                        intercepted_headers = dict(request.headers)
+                        intercepted_payload = request.post_data_json
+                        self._log(f"Перехвачен запрос на API: {request.url}")
+                    route.continue_()
+                
+                page.route("**/*", handle_request)
+                
+                # Переходим на страницу объявления
+                page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                
+                # Кликаем кнопку контактов
+                try:
+                    page.wait_for_selector('[data-testid="contacts-button"]', state="visible", timeout=15000)
+                    page.click('[data-testid="contacts-button"]')
+                    self._log("Кнопка контактов нажата")
+                except Exception as e:
+                    self._log(f"Ошибка при клике на кнопку: {str(e)}")
+                
+                # Ждем появления номера
+                try:
+                    page.wait_for_selector('[data-testid="PhoneLink"], .phone-number', state="attached", timeout=10000)
+                    self._log("Номер телефона появился на странице")
+                except:
+                    self._log("Таймаут ожидания номера телефона")
+                
+                # Дополнительное время для перехвата
+                page.wait_for_timeout(5000)
+                browser.close()
+        
+        except Exception as e:
+            self._log(f"Ошибка при активации через браузер: {str(e)}")
+        
+        # Обновляем данные на основе перехваченных значений
+        if intercepted_headers and intercepted_payload:
+            self._log("Обновляем заголовки и payload на основе перехваченных данных")
+            
+            # Обновляем заголовки
+            self.current_headers.update({
+                "Cookie": intercepted_headers.get("cookie", self.current_headers.get("Cookie", "")),
+                "Referer": intercepted_headers.get("referer", self.current_headers.get("Referer", "")),
+                "Origin": intercepted_headers.get("origin", self.current_headers.get("Origin", ""))
+            })
+            
+            # Обновляем payload
+            self.current_payload_template.update({
+                "blockId": intercepted_payload.get("blockId", self.current_payload_template.get("blockId", 0)),
+                "platformType": intercepted_payload.get("platformType", self.current_payload_template.get("platformType", "")),
+                "pageType": intercepted_payload.get("pageType", self.current_payload_template.get("pageType", "")),
+                "placeType": intercepted_payload.get("placeType", self.current_payload_template.get("placeType", "")),
+                "refererUrl": intercepted_payload.get("refererUrl", self.current_payload_template.get("refererUrl", "")),
+                "analyticClientId": intercepted_payload.get("analyticClientId", self.current_payload_template.get("analyticClientId", "")),
+                "utm": intercepted_payload.get("utm", self.current_payload_template.get("utm", ""))
+            })
+            
+            # Логируем обновленные данные
+            self._log(f"Обновленные заголовки: {json.dumps(self.current_headers, indent=2)}")
+            self._log(f"Обновленный payload: {json.dumps(self.current_payload_template, indent=2)}")
+        else:
+            self._log("Не удалось перехватить данные, используем значения по умолчанию")
+
     def _clear_existing_files(self):
         """Удаляет существующие файлы данных, чтобы начать парсинг заново"""
         files_to_remove = [
@@ -74,79 +163,6 @@ class CianPhoneParser:
             json.dump({"data": self.parsed_data}, f, ensure_ascii=False, indent=2)
         self._log(f"[{datetime.now()}] Сохранено {len(self.parsed_data)} номеров")
     
-    def activate_payload(self, announcement_id, url):
-        """Активирует и возвращает новый blockId через браузер"""
-        self._log(f"Активация payload через браузер для ID: {announcement_id}")
-        intercepted_payload = None
-        session_cookies = None
-        
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=False)
-                context = browser.new_context()
-                page = context.new_page()
-                
-                # Перехватываем запросы к API
-                def handle_request(route, request):
-                    nonlocal intercepted_payload
-                    if request.url == config.API_URL and request.method == "POST":
-                        intercepted_payload = request.post_data_json
-                        self._log(f"Перехвачен payload: {intercepted_payload}")
-                    route.continue_()
-                
-                page.route("**/*", handle_request)
-                
-                # Переходим на страницу объявления
-                page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                
-                # Ожидаем и кликаем кнопку контактов
-                try:
-                    page.wait_for_selector('[data-testid="contacts-button"]', state="visible", timeout=15000)
-                    page.evaluate('''() => {
-                        const btn = document.querySelector('[data-testid="contacts-button"]');
-                        if (btn) {
-                            btn.scrollIntoView({behavior: 'smooth', block: 'center'});
-                        }
-                    }''')
-                    page.click('[data-testid="contacts-button"]')
-                    self._log("Кнопка контактов нажата")
-                except PlaywrightTimeoutError:
-                    self._log("Таймаут ожидания кнопки контактов")
-                    try:
-                        page.evaluate('''() => {
-                            const btn = document.querySelector('[data-testid="contacts-button"]');
-                            if (btn) {
-                                btn.click();
-                                return true;
-                            }
-                            return false;
-                        }''')
-                        self._log("Клик выполнен через evaluate")
-                    except:
-                        self._log("Не удалось выполнить клик через evaluate")
-                
-                # Ждем появления номера
-                try:
-                    page.wait_for_selector('[data-testid="PhoneLink"], .phone-number', state="attached", timeout=10000)
-                    self._log("Номер телефона появился на странице")
-                except PlaywrightTimeoutError:
-                    self._log("Таймаут ожидания номера телефона")
-                
-                # Дополнительное время для перехвата
-                page.wait_for_timeout(5000)
-                
-                # Закрываем браузер
-                browser.close()
-                
-                # Возвращаем только blockId из перехваченного payload
-                if intercepted_payload and "blockId" in intercepted_payload:
-                    return intercepted_payload["blockId"]
-        
-        except Exception as e:
-            self._log(f"Ошибка при работе с браузером: {str(e)}")
-        
-        return None
-
     def fetch_phone_with_retry(self, announcement_id, url, block_id=None, direct_phone=None):
         """Получает телефонный номер через API с повторными попытками"""
         # Если есть прямой телефон, используем его
@@ -160,29 +176,18 @@ class CianPhoneParser:
             }
         
         domain = self.extract_domain(url)
-        location_url = f"https://{domain}.cian.ru/sale/flat/{announcement_id}/"
+        location_url = f"https://tyumen.cian.ru/sale/flat/{announcement_id}/"
         
-        # Если активация еще не выполнена, делаем ее для получения нового blockId
-        if not self.activated and block_id is None:
-            self._log("Выполняем первоначальную активацию для получения blockId...")
-            new_block_id = self.activate_payload(announcement_id, url)
-            
-            if new_block_id:
-                # Обновляем только blockId в шаблоне
-                self.payload_template["blockId"] = new_block_id
-                self.activated = True
-                self._log(f"Обновлен blockId: {new_block_id}")
-                self._log(f"Текущий payload_template: {json.dumps(self.payload_template, indent=2)}")
-            else:
-                self._log("Не удалось получить blockId через браузер")
+        headers = utils.sanitize_payload(self.current_headers)
+        payload = self.current_payload_template.copy()
+        payload = utils.sanitize_payload(payload)
         
-        payload = self.payload_template.copy()
         # Если передан block_id (из данных объявления), используем его
         if block_id is not None:
-            payload["blockId"] = block_id
+            payload["blockId"] = int(block_id)
         
         payload.update({
-            "announcementId": announcement_id,
+            "announcementId": int(announcement_id),
             "locationUrl": location_url,
         })
         
@@ -190,18 +195,19 @@ class CianPhoneParser:
         max_attempts = 6  # Увеличили количество попыток до 6
         
         self._log(f"URL запроса: {location_url}")
+        self._log(f"Payload: {json.dumps(payload, indent=2)}")
         
         while attempts < max_attempts:
             try:
                 response = requests.post(
                     config.API_URL,
-                    headers=config.HEADERS,
+                    headers=headers,
                     json=payload,
                     timeout=15
                 )
                 response.raise_for_status()
                 data = response.json()
-                                
+                
                 if "phone" in data and data["phone"]:
                     # Форматируем телефон перед возвратом
                     data["phone"] = utils.format_phone(data["phone"])
