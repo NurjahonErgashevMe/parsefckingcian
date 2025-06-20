@@ -75,8 +75,13 @@ def parse_cian_ads(log_callback=None):
         # Создаем lock-файл
         utils.start_parsing()
         
+        # Получаем регион из настроек
+        region_name = utils.get_region_name()
+        log_message = f"📍 Парсинг объявлений для региона: {region_name}"
+        _log(log_callback, log_message)
+        
         # Парсим данные БЕЗ дополнительных запросов
-        parser = cianparser.CianParser(location="Тюмень")
+        parser = cianparser.CianParser(location=region_name)
         data = parser.get_flats(deal_type="sale", rooms=(1,2,3,4), additional_settings={"start_page":1, "end_page":1})
         
         # Проверяем и корректируем URL

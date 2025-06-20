@@ -2,20 +2,29 @@ import os
 import re
 import json
 from urllib.parse import urlparse
+from database import get_setting, set_setting
 
 def ensure_output_dir():
     """Создает папку output если её нет"""
     os.makedirs("output", exist_ok=True)
 
 def get_region_name():
-    """Получает название региона из конфигурации или URL"""
-    # Пока возвращаем "tyumen" как дефолт, но можно сделать динамически
-    return "tyumen"
+    """Получает название региона из базы данных"""
+    return get_setting('region', 'Тюмень')  # По умолчанию Тюмень
+
+def get_region_id():
+    """Получает ID региона из базы данных"""
+    return get_setting('region_id', '4827')  # ID Тюмени по умолчанию
+
+def set_region(region_name, region_id):
+    """Устанавливает регион в настройках"""
+    set_setting('region', region_name)
+    set_setting('region_id', region_id)
 
 def get_region_file():
-    """Возвращает путь к файлу регионов с названием региона"""
-    region_name = get_region_name()
-    return f"output/regions_{region_name}.json"
+    """Возвращает путь к файлу регионов с ID региона"""
+    region_id = get_region_id()
+    return f"output/regions_{region_id}.json"
 
 def get_phones_file():
     """Возвращает путь к файлу с номерами"""

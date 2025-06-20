@@ -6,10 +6,12 @@ import queue
 import threading
 from datetime import datetime
 from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.filters.callback_data import CallbackData
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -19,6 +21,7 @@ import utils
 import parser_ads
 import phones_parser
 import config
+import cianparser
 
 # Глобальные переменные для управления состоянием
 parsing_in_progress = False
@@ -32,6 +35,10 @@ dp = Dispatcher()
 # Callback data для кнопок
 class AuthorTypeCallback(CallbackData, prefix="author"):
     type: str
+
+# Состояния для FSM
+class RegionState(StatesGroup):
+    waiting_region_name = State()
 
 async def delete_file_after_delay(file_path: str, delay_seconds: int = 10):
     """Удаляет файл через указанное количество секунд"""
@@ -183,7 +190,7 @@ def create_author_type_keyboard():
         [
             InlineKeyboardButton(
                 text="👔 Риэлторы",
-                callback_data=AuthorTypeCallback(type="rieltor").pack()
+                callback_data=AuthorTypeCallback(type="realtor").pack()
             )
         ],
         [
@@ -195,14 +202,37 @@ def create_author_type_keyboard():
     ])
     return keyboard
 
+def create_main_keyboard():
+    """Создает главную клавиатуру меню"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🚀 Парсить")],
+            [KeyboardButton(text="⚙️ Настройки парсинга")]
+        ],
+        resize_keyboard=True
+    )
+
+def generate_regions_file():
+    """Генерирует файл со списком доступных регионов"""
+    regions = cianparser.list_locations()
+    
+    # Сортируем регионы по алфавиту
+    regions.sort(key=lambda x: x[0].lower())
+    
+    # Создаем временный файл
+    filename = "available_regions.txt"
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write("Список доступных регионов для парсинга:\n")
+        f.write("=" * 50 + "\n\n")
+        
+        for region in regions:
+            f.write(f"• {region[0]} (ID: {region[1]})\n")
+    
+    return filename
+
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     """Обработчик команды /start"""
-    markup = types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text="🚀 Парсить")]],
-        resize_keyboard=True
-    )
-    
     await message.answer(
         "👋 Привет! Я бот для парсинга телефонных номеров с CIAN.\n\n"
         "🎯 Бот умеет парсить номера от разных типов авторов:\n"
@@ -211,7 +241,7 @@ async def start_command(message: types.Message):
         "• 🏠 Владельцы домов\n"
         "• 👔 Риэлторы\n\n"
         "Нажми кнопку '🚀 Парсить' или отправь команду /parse, чтобы начать сбор данных.",
-        reply_markup=markup
+        reply_markup=create_main_keyboard()
     )
 
 @dp.message(Command("parse"))
@@ -237,6 +267,152 @@ async def parse_command(message: types.Message):
     
     # Запускаем задачу для периодического обновления логов
     asyncio.create_task(log_updater(message.chat.id))
+
+@dp.message(F.text == "⚙️ Настройки парсинга")
+async def parsing_settings(message: types.Message):
+    """Обработчик кнопки настроек парсинга"""
+    current_region = utils.get_region_name()
+    region_id = utils.get_region_id()
+    
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Изменить регион")],
+            [KeyboardButton(text="Список регионов")],
+            [KeyboardButton(text="Назад в меню")]
+        ],
+        resize_keyboard=True
+    )
+    
+    await message.answer(
+        f"⚙️ <b>Текущие настройки парсинга:</b>\n"
+        f"• <b>Регион:</b> {current_region}\n"
+        f"• <b>ID региона:</b> {region_id}\n\n"
+        f"Выберите действие:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+@dp.message(F.text == "Изменить регион")
+async def change_region(message: types.Message, state: FSMContext):
+    """Обработчик кнопки изменения региона"""
+    await state.set_state(RegionState.waiting_region_name)
+    
+    # Отправляем подсказку с популярными регионами
+    popular_regions = [
+        "Москва", "Санкт-Петербург", "Тюмень" , "Новосибирск", "Екатеринбург", "Казань",
+        "Нижний Новгород", "Челябинск", "Самара", "Омск", "Ростов-на-Дону"
+    ]
+    
+    regions_text = "\n".join([f"• {region}" for region in popular_regions])
+    
+    await message.answer(
+        "Введите название региона:\n\n"
+        "🔹 <b>Популярные регионы:</b>\n"
+        f"{regions_text}\n\n"
+        "Для полного списка регионов нажмите кнопку 'Список регионов'",
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode="HTML"
+    )
+
+@dp.message(F.text == "Список регионов")
+async def send_regions_list(message: types.Message):
+    """Отправляет список доступных регионов в виде файла"""
+    try:
+        # Генерируем файл со списком регионов
+        regions_file = generate_regions_file()
+        file = FSInputFile(regions_file)
+        
+        # Отправляем файл
+        await message.answer_document(
+            document=file,
+            caption="📋 <b>Полный список доступных регионов:</b>\n\n"
+                    "Используйте точное название региона при вводе.",
+            parse_mode="HTML"
+        )
+        
+        # Удаляем файл через 30 секунд
+        asyncio.create_task(delete_file_after_delay(regions_file, 30))
+        
+        # Предлагаем ввести регион
+        await message.answer(
+            "Введите название региона:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="Назад в настройки")]],
+                resize_keyboard=True
+            )
+        )
+    except Exception as e:
+        await message.answer(f"❌ Не удалось сгенерировать список регионов: {str(e)}")
+
+@dp.message(RegionState.waiting_region_name)
+async def process_region_name(message: types.Message, state: FSMContext):
+    """Обработчик ввода названия региона"""
+    # Проверяем, если пользователь хочет вернуться
+    if message.text == "Назад в настройки":
+        await state.clear()
+        await parsing_settings(message)
+        return
+        
+    region_name = message.text.strip()
+    locations = cianparser.list_locations()
+    
+    # Ищем точное совпадение
+    found = None
+    for loc in locations:
+        if loc[0].lower() == region_name.lower():
+            found = loc
+            break
+    
+    if found:
+        region_id = found[1]
+        utils.set_region(region_name, region_id)
+        await state.clear()
+        
+        await message.answer(
+            f"✅ <b>Регион изменен</b>\n"
+            f"• <b>Новый регион:</b> {region_name}\n"
+            f"• <b>ID региона:</b> {region_id}\n\n"
+            f"Теперь все парсинги будут выполняться для этого региона.",
+            reply_markup=create_main_keyboard(),
+            parse_mode="HTML"
+        )
+    else:
+        # Попробуем найти похожие
+        similar = []
+        for loc in locations:
+            if region_name.lower() in loc[0].lower():
+                similar.append(loc[0])
+                if len(similar) >= 5:  # Ограничим 5 вариантами
+                    break
+        
+        if similar:
+            suggestions = "\n".join([f"• {name}" for name in similar])
+            await message.answer(
+                f"❌ <b>Регион не найден</b>\n\n"
+                f"Возможно вы имели в виду:\n"
+                f"{suggestions}\n\n"
+                "Пожалуйста, введите название точно:",
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer(
+                "❌ Регион не найден. Пожалуйста, введите название точно:"
+            )
+
+@dp.message(F.text == "Назад в меню")
+async def back_to_menu(message: types.Message, state: FSMContext):
+    """Обработчик кнопки возврата в меню"""
+    await state.clear()
+    await message.answer(
+        "Главное меню:",
+        reply_markup=create_main_keyboard()
+    )
+
+@dp.message(F.text == "Назад в настройки")
+async def back_to_settings(message: types.Message, state: FSMContext):
+    """Обработчик кнопки возврата в настройки"""
+    await state.clear()
+    await parsing_settings(message)
 
 @dp.callback_query(AuthorTypeCallback.filter())
 async def handle_author_type_selection(callback: types.CallbackQuery, callback_data: AuthorTypeCallback):

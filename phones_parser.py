@@ -322,7 +322,7 @@ class CianPhoneParser:
     def get_filename_suffix(self):
         """Генерирует суффикс для имени файла с регионом, типом автора и временем"""
         # Получаем регион (можно сделать динамически из конфигурации)
-        region = "tyumen"  # Можно получить из конфигурации или URL
+        region_id = utils.get_region_id() or "unknown"
         
         # Определяем тип автора
         author_type = self.author_type or "all"
@@ -330,7 +330,7 @@ class CianPhoneParser:
         # Форматируем время
         timestamp = self.start_time.strftime("%d.%m.%Y-%H-%M-%S")
         
-        return f"_{region}_{author_type}_{timestamp}"
+        return f"_{region_id}_{author_type}_{timestamp}"
 
     def export_phones_to_txt(self):
         """Экспортирует номера в текстовый файл с улучшенным именованием"""
@@ -353,7 +353,7 @@ class CianPhoneParser:
             f.write("="*60 + "\n\n")
             f.write(f"📅 Дата парсинга: {self.start_time.strftime('%d.%m.%Y %H:%M:%S')}\n")
             f.write(f"🎯 Тип авторов: {author_display}\n")
-            f.write(f"🌍 Регион: Тюмень\n")
+            f.write(f"🌍 Регион: {utils.get_region_name()} (ID: {utils.get_region_id()})\n")
             f.write(f"📈 Обработано объявлений: {len(self.parsed_data)}\n")
             f.write(f"✅ Успешно полученных номеров: {success_count}\n")
             f.write(f"⏱️ Время выполнения: {datetime.now() - self.start_time}\n")
