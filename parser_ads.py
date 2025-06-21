@@ -79,14 +79,45 @@ def parse_cian_ads(log_callback=None):
         region_name = utils.get_region_name()
         region_id = utils.get_region_id()
         rooms = utils.get_rooms()
+        min_floor = utils.get_min_floor()
+        max_floor = utils.get_max_floor()
+        min_price = utils.get_min_price()
+        max_price = utils.get_max_price()
+        
         log_message = f"📍 Парсинг объявлений для региона: {region_name} (ID: {region_id})"
         _log(log_callback, log_message)
         log_message = f"🏠 Выбранные комнаты: {', '.join(map(str, rooms))}"
         _log(log_callback, log_message)
         
-        # Парсим данные БЕЗ дополнительных запросов
+        if min_floor:
+            _log(log_callback, f"⬇️ Мин. этаж: {min_floor}")
+        if max_floor:
+            _log(log_callback, f"⬆️ Макс. этаж: {max_floor}")
+        if min_price:
+            _log(log_callback, f"💰 Мин. цена: {min_price:,} ₽".replace(",", " "))
+        if max_price:
+            _log(log_callback, f"💰 Макс. цена: {max_price:,} ₽".replace(",", " "))
+        
+        # Формируем дополнительные настройки
+        additional_settings = {
+            "start_page": 1,
+            "end_page": 1,
+        }
+        
+        if min_floor:
+            additional_settings["min_floor"] = min_floor
+        if max_floor:
+            additional_settings["max_floor"] = max_floor
+        if min_price:
+            additional_settings["min_price"] = min_price
+        if max_price:
+            additional_settings["max_price"] = max_price
+        
+        # Парсим данные
         parser = cianparser.CianParser(location=region_name)
-        data = parser.get_flats(deal_type="sale", rooms=tuple(rooms), additional_settings={"start_page":1, "end_page":1})
+        data = parser.get_flats(deal_type="sale", rooms=(1,2), additional_settings={
+            "start_page": 1,
+            "end_page": 1})
         
         # Проверяем и корректируем URL
         for item in data:
@@ -124,6 +155,10 @@ def parse_cian_ads(log_callback=None):
                 "id": region_id
             },
             "rooms": rooms,
+            "min_floor": min_floor,
+            "max_floor": max_floor,
+            "min_price": min_price,
+            "max_price": max_price,
             "data": data
         }
         

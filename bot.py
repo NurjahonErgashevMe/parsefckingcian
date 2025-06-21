@@ -7,7 +7,7 @@ import threading
 from datetime import datetime
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
@@ -42,6 +42,18 @@ class RegionState(StatesGroup):
 
 class RoomState(StatesGroup):
     selecting_rooms = State()
+
+class MinFloorState(StatesGroup):
+    selecting_range = State()
+    selecting_floors = State()
+
+class MaxFloorState(StatesGroup):
+    selecting_range = State()
+    selecting_floors = State()
+
+class PriceState(StatesGroup):
+    min_price = State()
+    max_price = State()
 
 async def delete_file_after_delay(file_path: str, delay_seconds: int = 10):
     """Удаляет файл через указанное количество секунд"""
@@ -265,6 +277,114 @@ def create_rooms_keyboard(selected_rooms):
     
     return keyboard
 
+def create_floor_range_keyboard(min_value=0):
+    """Клавиатура с диапазонами этажей с фильтрацией"""
+    ranges = [
+        ("1-10", 1, 10),
+        ("11-20", 11, 20),
+        ("21-30", 21, 30),
+        ("31-40", 31, 40),
+        ("41-50", 41, 50),
+        ("51-60", 51, 60),
+        ("61-70", 61, 70),
+        ("71-80", 71, 80),
+        ("81-90", 81, 90),
+        ("91-100", 91, 100),
+        ("Все этажи", 0, 0)
+    ]
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+    row = []
+    
+    for name, start, end in ranges:
+        # Фильтруем диапазоны: показываем только те, где верхняя граница >= min_value
+        if min_value > 0 and end < min_value and name != "Все этажи":
+            continue
+            
+        if name == "Все этажи":
+            keyboard.inline_keyboard.append([
+                InlineKeyboardButton(text=name, callback_data=f"floor_range_all")
+            ])
+        else:
+            row.append(InlineKeyboardButton(text=name, callback_data=f"floor_range_{start}_{end}"))
+            if len(row) == 3:
+                keyboard.inline_keyboard.append(row)
+                row = []
+    
+    if row:
+        keyboard.inline_keyboard.append(row)
+    
+    return keyboard
+
+def create_floor_selection_keyboard(start, end, selected_floors, min_value=0):
+    """Клавиатура для выбора конкретных этажей с фильтрацией"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+    row = []
+    
+    # Если выбран диапазон "Все этажи"
+    if start == 0 and end == 0:
+        keyboard.inline_keyboard.append([
+            InlineKeyboardButton(text="✅ Все этажи выбраны", callback_data="floor_none")
+        ])
+    else:
+        for floor in range(start, end + 1):
+            # Пропускаем этажи меньше минимального значения
+            if min_value > 0 and floor < min_value:
+                continue
+                
+            emoji = "✅" if floor in selected_floors else ""
+            row.append(
+                InlineKeyboardButton(
+                    text=f"{floor}{emoji}",
+                    callback_data=f"floor_{floor}"
+                )
+            )
+            if len(row) == 5:
+                keyboard.inline_keyboard.append(row)
+                row = []
+    
+    if row:
+        keyboard.inline_keyboard.append(row)
+    
+    # Кнопки управления
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(
+            text="✅ Выбрать все в диапазоне",
+            callback_data="floor_select_all"
+        )
+    ])
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(
+            text="💾 Сохранить выбор",
+            callback_data="floor_save"
+        )
+    ])
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(
+            text="⬅️ Назад к диапазонам",
+            callback_data="floor_back"
+        )
+    ])
+    
+    return keyboard
+
+def create_price_keyboard():
+    """Создает клавиатуру для настроек цен"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⬇️ Минимальная цена", callback_data="min_price_set")
+        ],
+        [
+            InlineKeyboardButton(text="⬆️ Максимальная цена", callback_data="max_price_set")
+        ],
+        [
+            InlineKeyboardButton(text="❌ Очистить цены", callback_data="clear_prices")
+        ],
+        [
+            InlineKeyboardButton(text="💾 Сохранить настройки", callback_data="save_prices")
+        ]
+    ])
+
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     """Обработчик команды /start"""
@@ -309,6 +429,10 @@ async def parsing_settings(message: types.Message):
     current_region = utils.get_region_name()
     region_id = utils.get_region_id()
     current_rooms = utils.get_rooms()
+    current_min_floor = utils.get_min_floor()
+    current_max_floor = utils.get_max_floor()
+    current_min_price = utils.get_min_price()
+    current_max_price = utils.get_max_price()
     
     # Получаем информацию о файле региона
     region_info = utils.get_region_info()
@@ -324,11 +448,22 @@ async def parsing_settings(message: types.Message):
         except ValueError:
             created_at_info = f"• <b>Дата создания:</b> {region_info['created_at']}\n"
     
+    # Форматируем этажи
+    min_floor_text = "не задано" if not current_min_floor else ", ".join(map(str, current_min_floor))
+    max_floor_text = "не задано" if not current_max_floor else ", ".join(map(str, current_max_floor))
+    
+    # Форматируем цены
+    min_price_text = "не задано" if not current_min_price else f"{current_min_price:,} ₽".replace(",", " ")
+    max_price_text = "не задано" if not current_max_price else f"{current_max_price:,} ₽".replace(",", " ")
+    
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Изменить регион")],
             [KeyboardButton(text="Список регионов")],
             [KeyboardButton(text="Выбрать комнаты")],
+            [KeyboardButton(text="Настроить этажи")],
+            [KeyboardButton(text="Настроить цены")],
+            [KeyboardButton(text="Сбросить настройки")],  # Новая кнопка
             [KeyboardButton(text="Назад в меню")]
         ],
         resize_keyboard=True
@@ -339,6 +474,10 @@ async def parsing_settings(message: types.Message):
         f"• <b>Регион:</b> {current_region}\n"
         f"• <b>ID региона:</b> {region_id}\n"
         f"• <b>Комнаты:</b> {', '.join(map(str, current_rooms))}\n"
+        f"• <b>Мин. этаж:</b> {min_floor_text}\n"
+        f"• <b>Макс. этаж:</b> {max_floor_text}\n"
+        f"• <b>Мин. цена:</b> {min_price_text}\n"
+        f"• <b>Макс. цена:</b> {max_price_text}\n"
         f"{created_at_info}\n"
         f"Выберите действие:",
         reply_markup=keyboard,
@@ -415,6 +554,135 @@ async def select_rooms(message: types.Message, state: FSMContext):
     await state.set_data({"selected_rooms": current_rooms})
     await state.set_state(RoomState.selecting_rooms)
 
+@dp.message(F.text == "Настроить этажи")
+async def setup_floors(message: types.Message, state: FSMContext):
+    """Запуск настройки этажей"""
+    await state.set_state(MinFloorState.selecting_range)
+    await message.answer(
+        "Выберите диапазон для МИНИМАЛЬНОГО этажа:",
+        reply_markup=create_floor_range_keyboard()
+    )
+
+@dp.message(F.text == "Настроить цены")
+async def setup_prices(message: types.Message, state: FSMContext):
+    """Запуск настройки цен"""
+    current_min_price = utils.get_min_price()
+    current_max_price = utils.get_max_price()
+    
+    min_price_text = "не задано" if not current_min_price else f"{current_min_price:,} ₽".replace(",", " ")
+    max_price_text = "не задано" if not current_max_price else f"{current_max_price:,} ₽".replace(",", " ")
+    
+    await message.answer(
+        f"💰 <b>Текущие настройки цен:</b>\n"
+        f"• Минимальная цена: {min_price_text}\n"
+        f"• Максимальная цена: {max_price_text}\n\n"
+        "Выберите действие:",
+        reply_markup=create_price_keyboard(),
+        parse_mode="HTML"
+    )
+
+@dp.callback_query(F.data == "min_price_set")
+async def set_min_price(callback: types.CallbackQuery, state: FSMContext):
+    """Запрос минимальной цены"""
+    await callback.message.edit_text(
+        "⬇️ Введите минимальную цену в рублях (например: 5000000):\n\n"
+        "Цена должна быть целым числом без пробелов и других символов.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="❌ Без ограничений", callback_data="min_price_clear")
+        ]])
+    )
+    await state.set_state(PriceState.min_price)
+
+@dp.callback_query(F.data == "max_price_set")
+async def set_max_price(callback: types.CallbackQuery, state: FSMContext):
+    """Запрос максимальной цены"""
+    await callback.message.edit_text(
+        "⬆️ Введите максимальную цену в рублях (например: 10000000):\n\n"
+        "Цена должна быть целым числом без пробелов и других символов.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="❌ Без ограничений", callback_data="max_price_clear")
+        ]])
+    )
+    await state.set_state(PriceState.max_price)
+
+@dp.callback_query(F.data.startswith(("min_price_clear", "max_price_clear")))
+async def clear_price(callback: types.CallbackQuery, state: FSMContext):
+    """Очистка цены"""
+    price_type = "min_price" if callback.data.startswith("min_price") else "max_price"
+    
+    if price_type == "min_price":
+        utils.set_min_price(None)
+    else:
+        utils.set_max_price(None)
+    
+    await callback.answer(f"✅ {price_type.replace('_', ' ').capitalize()} очищена")
+    await setup_prices(callback.message, state)
+
+@dp.message(PriceState.min_price, F.text)
+async def process_min_price(message: types.Message, state: FSMContext):
+    """Обработка минимальной цены"""
+    if message.text == "❌ Без ограничений":
+        utils.set_min_price(None)
+        await message.answer("✅ Минимальная цена очищена")
+    else:
+        try:
+            price = int(message.text)
+            utils.set_min_price(price)
+            await message.answer(f"✅ Минимальная цена установлена: {price:,} ₽".replace(",", " "))
+        except ValueError:
+            await message.answer("❌ Неверный формат цены. Введите целое число (например: 5000000)")
+    
+    await state.clear()
+    await setup_prices(message, state)
+
+@dp.message(PriceState.max_price, F.text)
+async def process_max_price(message: types.Message, state: FSMContext):
+    """Обработка максимальной цены"""
+    if message.text == "❌ Без ограничений":
+        utils.set_max_price(None)
+        await message.answer("✅ Максимальная цена очищена")
+    else:
+        try:
+            price = int(message.text)
+            utils.set_max_price(price)
+            await message.answer(f"✅ Максимальная цена установлена: {price:,} ₽".replace(",", " "))
+        except ValueError:
+            await message.answer("❌ Неверный формат цены. Введите целое число (например: 10000000)")
+    
+    await state.clear()
+    await setup_prices(message, state)
+
+@dp.callback_query(F.data == "clear_prices")
+async def clear_all_prices(callback: types.CallbackQuery, state: FSMContext):
+    """Очистка всех цен"""
+    utils.set_min_price(None)
+    utils.set_max_price(None)
+    await callback.answer("✅ Все цены очищены")
+    await setup_prices(callback.message, state)
+
+@dp.callback_query(F.data == "save_prices")
+async def save_prices(callback: types.CallbackQuery, state: FSMContext):
+    """Сохранение настроек цен"""
+    await callback.answer("✅ Настройки цен сохранены!")
+    await parsing_settings(callback.message)
+
+@dp.message(F.text == "Сбросить настройки")
+async def reset_settings(message: types.Message):
+    """Сброс всех настроек к значениям по умолчанию"""
+    # Сбрасываем настройки
+    utils.reset_settings()
+    
+    await message.answer(
+        "✅ Все настройки сброшены к значениям по умолчанию:\n"
+        "• Регион: Тюмень\n"
+        "• Комнаты: 1, 2, 3, 4\n"
+        "• Минимальный этаж: не задано\n"
+        "• Максимальный этаж: не задано\n"
+        "• Минимальная цена: не задано\n"
+        "• Максимальная цена: не задано",
+        reply_markup=create_main_keyboard()
+    )
+
 @dp.callback_query(RoomState.selecting_rooms, F.data.startswith("room_"))
 async def toggle_room(callback: types.CallbackQuery, state: FSMContext):
     """Обработчик переключения комнаты"""
@@ -451,6 +719,192 @@ async def save_rooms(callback: types.CallbackQuery, state: FSMContext):
     
     # Возвращаем в меню настроек
     await parsing_settings(callback.message)
+
+@dp.callback_query(MinFloorState.selecting_range, F.data.startswith("floor_range_"))
+async def min_floor_range_selected(callback: types.CallbackQuery, state: FSMContext):
+    data = callback.data.split("_")
+    if data[2] == "all":
+        await state.update_data(range_start=0, range_end=0, range_name="Все этажи")
+        utils.set_min_floor([])
+        await callback.answer("Минимальный этаж: без ограничений")
+        await state.set_state(MaxFloorState.selecting_range)
+        await callback.message.answer(
+            "Выберите диапазон для МАКСИМАЛЬНОГО этажа:",
+            reply_markup=create_floor_range_keyboard()
+        )
+        return
+    else:
+        start = int(data[2])
+        end = int(data[3])
+        await state.update_data(range_start=start, range_end=end, range_name=f"{start}-{end}")
+    
+    await state.set_state(MinFloorState.selecting_floors)
+    current_floors = utils.get_min_floor()
+    
+    state_data = await state.get_data()
+    await callback.message.edit_text(
+        f"Выберите МИНИМАЛЬНЫЕ этажи в диапазоне {state_data['range_name']}:\n"
+        "(Нажмите на этаж, чтобы выбрать/отменить)",
+        reply_markup=create_floor_selection_keyboard(
+            state_data['range_start'],
+            state_data['range_end'],
+            current_floors
+        )
+    )
+
+@dp.callback_query(MinFloorState.selecting_floors, F.data.startswith("floor_"))
+async def min_floor_selected(callback: types.CallbackQuery, state: FSMContext):
+    data_parts = callback.data.split("_")
+    action = data_parts[1]
+    state_data = await state.get_data()
+    current_floors = utils.get_min_floor()
+    
+    if action == "select":  # Выбрать все
+        new_floors = list(range(state_data['range_start'], state_data['range_end'] + 1))
+        utils.set_min_floor(new_floors)
+        await callback.answer("Все этажи в диапазоне выбраны!")
+    elif action == "save":  # Сохранить
+        # Сохраняем минимальные этажи
+        current_min_floors = utils.get_min_floor()
+        
+        # Вычисляем минимальное значение для максимального этажа
+        min_value_for_max = max(current_min_floors) if current_min_floors else 0
+        
+        await callback.answer("Выбор сохранён")
+        await state.set_state(MaxFloorState.selecting_range)
+        await callback.message.answer(
+            "Выберите диапазон для МАКСИМАЛЬНОГО этажа:",
+            reply_markup=create_floor_range_keyboard(min_value=min_value_for_max)
+        )
+        return
+    elif action == "back":  # Назад
+        await state.set_state(MinFloorState.selecting_range)
+        await callback.message.edit_text(
+            "Выберите диапазон для МИНИМАЛЬНОГО этажа:",
+            reply_markup=create_floor_range_keyboard()
+        )
+        return
+    else:  # Выбор конкретного этажа
+        floor = int(action)
+        if floor in current_floors:
+            current_floors.remove(floor)
+        else:
+            current_floors.append(floor)
+        utils.set_min_floor(current_floors)
+    
+    # Обновляем клавиатуру
+    await callback.message.edit_reply_markup(
+        reply_markup=create_floor_selection_keyboard(
+            state_data['range_start'],
+            state_data['range_end'],
+            utils.get_min_floor()
+        )
+    )
+    await callback.answer()
+
+@dp.callback_query(MaxFloorState.selecting_range, F.data.startswith("floor_range_"))
+async def max_floor_range_selected(callback: types.CallbackQuery, state: FSMContext):
+    data = callback.data.split("_")
+    state_data = await state.get_data()
+    current_min_floors = utils.get_min_floor()
+    min_value_for_max = max(current_min_floors) if current_min_floors else 0
+    
+    if data[2] == "all":
+        await state.update_data(range_start=0, range_end=0, range_name="Все этажи")
+        utils.set_max_floor([])
+        await callback.answer("Максимальный этаж: без ограничений")
+        await save_floors_settings(callback.message, state)
+        return
+    else:
+        start = int(data[2])
+        end = int(data[3])
+        await state.update_data(range_start=start, range_end=end, range_name=f"{start}-{end}")
+    
+    await state.set_state(MaxFloorState.selecting_floors)
+    current_floors = utils.get_max_floor()
+    
+    state_data = await state.get_data()
+    await callback.message.edit_text(
+        f"Выберите МАКСИМАЛЬНЫЕ этажи в диапазоне {state_data['range_name']}:\n"
+        "(Нажмите на этаж, чтобы выбрать/отменить)",
+        reply_markup=create_floor_selection_keyboard(
+            state_data['range_start'],
+            state_data['range_end'],
+            current_floors,
+            min_value=min_value_for_max
+        )
+    )
+
+@dp.callback_query(MaxFloorState.selecting_floors, F.data.startswith("floor_"))
+async def max_floor_selected(callback: types.CallbackQuery, state: FSMContext):
+    data_parts = callback.data.split("_")
+    action = data_parts[1]
+    state_data = await state.get_data()
+    current_floors = utils.get_max_floor()
+    current_min_floors = utils.get_min_floor()
+    min_value_for_max = max(current_min_floors) if current_min_floors else 0
+    
+    if action == "select":  # Выбрать все
+        # Фильтруем этажи по минимальному значению
+        new_floors = [
+            f for f in range(state_data['range_start'], state_data['range_end'] + 1) 
+            if f >= min_value_for_max
+        ]
+        utils.set_max_floor(new_floors)
+        await callback.answer("Все этажи в диапазоне выбраны!")
+    elif action == "save":  # Сохранить
+        await save_floors_settings(callback.message, state)
+        return
+    elif action == "back":  # Назад
+        await state.set_state(MaxFloorState.selecting_range)
+        await callback.message.edit_text(
+            "Выберите диапазон для МАКСИМАЛЬНОГО этажа:",
+            reply_markup=create_floor_range_keyboard(min_value=min_value_for_max)
+        )
+        return
+    else:  # Выбор конкретного этажа
+        floor = int(action)
+        # Проверяем, что этаж не меньше минимального значения
+        if min_value_for_max > 0 and floor < min_value_for_max:
+            await callback.answer("Этаж должен быть больше минимального значения!")
+            return
+            
+        if floor in current_floors:
+            current_floors.remove(floor)
+        else:
+            current_floors.append(floor)
+        utils.set_max_floor(current_floors)
+    
+    # Обновляем клавиатуру
+    await callback.message.edit_reply_markup(
+        reply_markup=create_floor_selection_keyboard(
+            state_data['range_start'],
+            state_data['range_end'],
+            utils.get_max_floor(),
+            min_value=min_value_for_max
+        )
+    )
+    await callback.answer()
+
+async def save_floors_settings(message: types.Message, state: FSMContext):
+    """Сохранение настроек этажей и завершение"""
+    min_floors = utils.get_min_floor()
+    max_floors = utils.get_max_floor()
+    
+    min_text = "не задано" if not min_floors else ", ".join(map(str, min_floors))
+    max_text = "не задано" if not max_floors else ", ".join(map(str, max_floors))
+    
+    await state.clear()
+    await message.answer(
+        f"✅ Настройки этажей сохранены:\n"
+        f"• Минимальный этаж: {min_text}\n"
+        f"• Максимальный этаж: {max_text}\n\n"
+        "Старые данные парсинга удалены.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="Назад в настройки")]],
+            resize_keyboard=True
+        )
+    )
 
 @dp.message(RegionState.waiting_region_name)
 async def process_region_name(message: types.Message, state: FSMContext):

@@ -11,6 +11,8 @@ LOCATION = "Тюмень"
 DEAL_TYPE = "sale"
 ROOMS = (1, 2, 3, 4)
 DEFAULT_TYPE="developer"
+MIN_PRICE = None
+MAX_PRICE = None
 
 # Настройки расписания
 SCHEDULE_TIME = "00:00"  # Время запуска по МСК

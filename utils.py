@@ -1,9 +1,13 @@
 import os
 import re
 import json
+import sqlite3
 from urllib.parse import urlparse
 from datetime import datetime
-from database import get_setting, set_setting
+from contextlib import closing
+from database import init_db
+
+DB_NAME = "cian_bot.db"
 
 def ensure_output_dir():
     """Создает папку output если её нет"""
@@ -36,7 +40,27 @@ def get_region_id():
 def get_rooms():
     """Получает список выбранных комнат"""
     rooms_str = get_setting('rooms', '1,2,3,4')
-    return [int(room) for room in rooms_str.split(',')]
+    return [int(room) for room in rooms_str.split(',')] if rooms_str else []
+
+def get_min_floor():
+    """Получает настройки минимального этажа"""
+    value = get_setting('min_floor', '')
+    return [int(f) for f in value.split(',')] if value else []
+
+def get_max_floor():
+    """Получает настройки максимального этажа"""
+    value = get_setting('max_floor', '')
+    return [int(f) for f in value.split(',')] if value else []
+
+def get_min_price():
+    """Получает минимальную цену"""
+    value = get_setting('min_price', '')
+    return int(value) if value else None
+
+def get_max_price():
+    """Получает максимальную цену"""
+    value = get_setting('max_price', '')
+    return int(value) if value else None
 
 def set_region(region_name, region_id):
     """Устанавливает регион в настройках"""
@@ -48,6 +72,40 @@ def set_rooms(rooms):
     """Устанавливает выбранные комнаты"""
     set_setting('rooms', ','.join(map(str, rooms)))
     clear_parsing_data()  # Удаляем старые данные
+
+def set_min_floor(floors):
+    """Устанавливает минимальные этажи"""
+    value = ','.join(map(str, floors)) if floors else ''
+    set_setting('min_floor', value)
+    clear_parsing_data()
+
+def set_max_floor(floors):
+    """Устанавливает максимальные этажи"""
+    value = ','.join(map(str, floors)) if floors else ''
+    set_setting('max_floor', value)
+    clear_parsing_data()
+
+def set_min_price(price):
+    """Устанавливает минимальную цену"""
+    set_setting('min_price', str(price) if price is not None else '')
+    clear_parsing_data()
+
+def set_max_price(price):
+    """Устанавливает максимальную цену"""
+    set_setting('max_price', str(price) if price is not None else '')
+    clear_parsing_data()
+
+def reset_settings():
+    """Сбрасывает все настройки к значениям по умолчанию"""
+    # Удаляем все записи из таблицы настроек
+    with closing(sqlite3.connect(DB_NAME)) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM settings")
+        conn.commit()
+    
+    # Повторно инициализируем настройки по умолчанию
+    init_db()
+    clear_parsing_data()
 
 def get_region_file():
     """Возвращает путь к файлу регионов с ID региона"""
@@ -239,3 +297,21 @@ def get_region_info():
     except (json.JSONDecodeError, KeyError) as e:
         print(f"Ошибка при чтении информации о регионе: {str(e)}")
         return None
+
+def get_setting(key, default=None):
+    """Получает значение настройки из базы данных"""
+    with closing(sqlite3.connect(DB_NAME)) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        result = cursor.fetchone()
+        return result[0] if result else default
+
+def set_setting(key, value):
+    """Устанавливает значение настройки в базе данных"""
+    with closing(sqlite3.connect(DB_NAME)) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, value)
+        )
+        conn.commit()

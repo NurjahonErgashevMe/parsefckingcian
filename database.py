@@ -17,6 +17,10 @@ def init_db():
         default_region = 'Тюмень'
         default_region_id = '4827'
         default_rooms = '1,2,3,4'  # Комнаты по умолчанию
+        default_min_floor = ''  # Пустое значение = все этажи
+        default_max_floor = ''  # Пустое значение = все этажи
+        default_min_price = ''  # Пустое значение = нет ограничений
+        default_max_price = ''  # Пустое значение = нет ограничений
         
         # Проверяем, есть ли уже настройки
         cursor.execute("SELECT value FROM settings WHERE key = 'region'")
@@ -32,6 +36,24 @@ def init_db():
             cursor.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?)",
                 ('rooms', default_rooms)
+            )
+            # Добавляем настройки этажей
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ('min_floor', default_min_floor)
+            )
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ('max_floor', default_max_floor)
+            )
+            # Добавляем настройки цен
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ('min_price', default_min_price)
+            )
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ('max_price', default_max_price)
             )
         conn.commit()
 
