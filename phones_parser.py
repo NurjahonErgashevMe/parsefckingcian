@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import config
 
 class CianPhoneParser:
-    def __init__(self, max_phones=50, log_callback=None, clear_existing=False, author_type=config.DEFAULT_TYPE):
+    def __init__(self, max_phones=50, log_callback=None, clear_existing=False, author_type=config.DEFAULT_TYPE, is_scheduled=False):
         utils.ensure_output_dir()
         self.parsed_data = {}
         self.max_phones = max_phones
@@ -19,6 +19,7 @@ class CianPhoneParser:
         self.current_headers = config.HEADERS.copy()
         self.current_payload_template = config.PAYLOAD_TEMPLATE.copy()
         self.author_type = author_type
+        self.is_scheduled = is_scheduled
         
         # Очистка старых файлов при необходимости
         if clear_existing:
@@ -32,13 +33,17 @@ class CianPhoneParser:
             'developer': 'застройщики',
             'real_estate_agent': 'агенства недвижимостей',
             'homeowner': 'владельцы домов',
-            'rieltor': 'риэлторы'
+            'realtor': 'риэлторы'
         }
         author_display = author_names.get(author_type, author_type or 'все типы')
         
         self._log(f"[{self.start_time}] Начало парсинга телефонных номеров")
         self._log(f"🎯 Тип авторов: {author_display}")
         self._log(f"📊 ОГРАНИЧЕНИЕ: Будет обработано не более {self.max_phones} номеров")
+        
+        if self.is_scheduled:
+            self._log("⏰ АВТОМАТИЧЕСКИЙ ПАРСИНГ ПО РАСПИСАНИЮ")
+        
         if clear_existing:
             self._log("🗑️ Старые файлы данных были удалены")
         
@@ -345,7 +350,7 @@ class CianPhoneParser:
             'developer': 'Застройщики',
             'real_estate_agent': 'Агенства недвижимостей',
             'homeowner': 'Владельцы домов',
-            'rieltor': 'Риэлторы'
+            'realtor': 'Риэлторы'
         }
         author_display = author_names.get(self.author_type, 'Все типы')
         
@@ -389,7 +394,7 @@ class CianPhoneParser:
                 'developer': 'застройщики',
                 'real_estate_agent': 'агенства недвижимостей',
                 'homeowner': 'владельцы домов',
-                'rieltor': 'риэлторы'
+                'realtor': 'риэлторы'
             }
             author_display = author_names.get(self.author_type, 'выбранный тип авторов')
             self._log(f"❌ Нет URL для обработки! Не найдено объявлений от типа '{author_display}'")
@@ -404,7 +409,7 @@ class CianPhoneParser:
             'developer': 'застройщики',
             'real_estate_agent': 'агенства недвижимостей',
             'homeowner': 'владельцы домов',
-            'rieltor': 'риэлторы'
+            'realtor': 'риэлторы'
         }
         author_display = author_names.get(self.author_type, 'все типы')
         

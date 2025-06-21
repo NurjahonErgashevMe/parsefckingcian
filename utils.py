@@ -106,6 +106,9 @@ def reset_settings():
     # Повторно инициализируем настройки по умолчанию
     init_db()
     clear_parsing_data()
+    
+    # Восстанавливаем время парсинга из конфига
+    set_setting('schedule_time', config.SCHEDULE_TIME)
 
 def get_region_file():
     """Возвращает путь к файлу регионов с ID региона"""

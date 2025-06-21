@@ -12,6 +12,8 @@ from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButto
 from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import pytz
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -27,6 +29,8 @@ import cianparser
 parsing_in_progress = False
 log_queue = queue.Queue()
 current_log_message = None
+scheduler = AsyncIOScheduler(timezone=pytz.timezone('Europe/Moscow'))
+bot_task = None  # Для хранения задачи бота
 
 # Инициализация бота
 bot = Bot(token=os.getenv("TELEGRAM_BOT_TOKEN"))
@@ -111,7 +115,7 @@ def log_callback(message: str):
     """Callback для записи логов в очередь"""
     log_queue.put(message)
 
-def run_parser(author_type=None):
+def run_parser(author_type=None, is_scheduled=False):
     """Запускает парсер в отдельном потоке"""
     global parsing_in_progress
     
@@ -127,10 +131,14 @@ def run_parser(author_type=None):
             'developer': '🏗️ застройщики',
             'real_estate_agent': '🏢 агенства недвижимостей',
             'homeowner': '🏠 владельцы домов',
-            'rieltor': '👔 риэлторы'
+            'realtor': '👔 риэлторы'
         }
         author_display = author_names.get(author_type, '👥 все типы')
         log_callback(f"🎯 Тип авторов: {author_display}")
+        
+        if is_scheduled:
+            log_callback("⏰ АВТОМАТИЧЕСКИЙ ПАРСИНГ ПО РАСПИСАНИЮ")
+            
         log_callback("="*50)
         
         # Проверяем наличие файла с данными
@@ -145,7 +153,8 @@ def run_parser(author_type=None):
                     parser = phones_parser.CianPhoneParser(
                         log_callback=log_callback,
                         clear_existing=True,
-                        author_type=author_type
+                        author_type=author_type,
+                        is_scheduled=is_scheduled
                     )
                     return parser.parse()
                     
@@ -166,7 +175,8 @@ def run_parser(author_type=None):
             parser = phones_parser.CianPhoneParser(
                 log_callback=log_callback,
                 clear_existing=True,
-                author_type=author_type
+                author_type=author_type,
+                is_scheduled=is_scheduled
             )
             return parser.parse()
         else:
@@ -177,7 +187,8 @@ def run_parser(author_type=None):
                 parser = phones_parser.CianPhoneParser(
                     log_callback=log_callback,
                     clear_existing=True,
-                    author_type=author_type
+                    author_type=author_type,
+                    is_scheduled=is_scheduled
                 )
                 return parser.parse()
     
@@ -205,7 +216,7 @@ def create_author_type_keyboard():
         [
             InlineKeyboardButton(
                 text="👔 Риэлторы",
-                callback_data=AuthorTypeCallback(type="rieltor").pack()
+                callback_data=AuthorTypeCallback(type="realtor").pack()
             )
         ],
         [
@@ -433,6 +444,7 @@ async def parsing_settings(message: types.Message):
     current_max_floor = utils.get_max_floor()
     current_min_price = utils.get_min_price()
     current_max_price = utils.get_max_price()
+    auto_parse_enabled = utils.get_setting('auto_parse_enabled', '0') == '1'
     
     # Получаем информацию о файле региона
     region_info = utils.get_region_info()
@@ -463,7 +475,8 @@ async def parsing_settings(message: types.Message):
             [KeyboardButton(text="Выбрать комнаты")],
             [KeyboardButton(text="Настроить этажи")],
             [KeyboardButton(text="Настроить цены")],
-            [KeyboardButton(text="Сбросить настройки")],  # Новая кнопка
+            [KeyboardButton(text="Автопарсинг")],
+            [KeyboardButton(text="Сбросить настройки")],
             [KeyboardButton(text="Назад в меню")]
         ],
         resize_keyboard=True
@@ -478,11 +491,94 @@ async def parsing_settings(message: types.Message):
         f"• <b>Макс. этаж:</b> {max_floor_text}\n"
         f"• <b>Мин. цена:</b> {min_price_text}\n"
         f"• <b>Макс. цена:</b> {max_price_text}\n"
+        f"• <b>Автопарсинг:</b> {'✅ включен' if auto_parse_enabled else '❌ выключен'}\n"
         f"{created_at_info}\n"
         f"Выберите действие:",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
+
+@dp.message(F.text == "Автопарсинг")
+async def auto_parse_settings(message: types.Message):
+    """Настройки автоматического парсинга"""
+    auto_parse_enabled = utils.get_setting('auto_parse_enabled', '0') == '1'
+    schedule_time = utils.get_setting('schedule_time', config.SCHEDULE_TIME)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🟢 Включить" if not auto_parse_enabled else "🔴 Выключить",
+                callback_data=f"toggle_auto_parse_{int(not auto_parse_enabled)}"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🕒 Изменить время",
+                callback_data="change_schedule_time"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔙 Назад",
+                callback_data="back_to_settings"
+            )
+        ]
+    ])
+    
+    await message.answer(
+        f"⏰ <b>Настройки автоматического парсинга:</b>\n"
+        f"• Статус: {'🟢 включен' if auto_parse_enabled else '🔴 выключен'}\n"
+        f"• Время запуска: {schedule_time}\n\n"
+        f"Автопарсинг выполняется ежедневно в указанное время.",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+@dp.callback_query(F.data.startswith("toggle_auto_parse_"))
+async def toggle_auto_parse(callback: types.CallbackQuery):
+    """Включение/выключение автоматического парсинга"""
+    new_state = callback.data.split("_")[-1]
+    utils.set_setting('auto_parse_enabled', new_state)
+    
+    if new_state == '1':
+        await callback.answer("✅ Автопарсинг включен!")
+    else:
+        await callback.answer("❌ Автопарсинг выключен!")
+    
+    await auto_parse_settings(callback.message)
+
+@dp.callback_query(F.data == "change_schedule_time")
+async def change_schedule_time(callback: types.CallbackQuery, state: FSMContext):
+    """Изменение времени автоматического парсинга"""
+    await callback.message.answer(
+        "🕒 Введите новое время для автоматического парсинга в формате ЧЧ:ММ (например, 03:00):",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    await state.set_state("waiting_schedule_time")
+
+@dp.message(F.text.regexp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'), StateFilter("waiting_schedule_time"))
+async def process_schedule_time(message: types.Message, state: FSMContext):
+    """Обработка нового времени для расписания"""
+    new_time = message.text.strip()
+    utils.set_setting('schedule_time', new_time)
+    
+    # Обновляем задачу в планировщике
+    scheduler.remove_all_jobs()
+    schedule_daily_parse()
+    
+    await message.answer(f"✅ Время автоматического парсинга установлено на {new_time}")
+    await state.clear()
+    await auto_parse_settings(message)
+
+@dp.message(StateFilter("waiting_schedule_time"))
+async def invalid_schedule_time(message: types.Message):
+    """Обработка неверного формата времени"""
+    await message.answer("❌ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 03:00)")
+
+@dp.callback_query(F.data == "back_to_settings")
+async def back_to_settings_from_auto(callback: types.CallbackQuery):
+    """Возврат в настройки"""
+    await parsing_settings(callback.message)
 
 @dp.message(F.text == "Изменить регион")
 async def change_region(message: types.Message, state: FSMContext):
@@ -679,7 +775,8 @@ async def reset_settings(message: types.Message):
         "• Минимальный этаж: не задано\n"
         "• Максимальный этаж: не задано\n"
         "• Минимальная цена: не задано\n"
-        "• Максимальная цена: не задано",
+        "• Максимальная цена: не задано\n"
+        "• Автопарсинг: ❌ выключен",
         reply_markup=create_main_keyboard()
     )
 
@@ -999,7 +1096,7 @@ async def handle_author_type_selection(callback: types.CallbackQuery, callback_d
     author_names = {
         'real_estate_agent': '🏢 агенства недвижимостей',
         'homeowner': '🏠 владельцы домов',
-        'rieltor': '👔 риэлторы'
+        'realtor': '👔 риэлторы'
     }
     author_display = author_names.get(callback_data.type, callback_data.type)
     
@@ -1023,18 +1120,74 @@ async def handle_author_type_selection(callback: types.CallbackQuery, callback_d
     # Запускаем задачу для периодического обновления логов
     asyncio.create_task(log_updater(callback.message.chat.id))
 
+def schedule_daily_parse():
+    """Настраивает ежедневный парсинг по расписанию"""
+    schedule_time = utils.get_setting('schedule_time', config.SCHEDULE_TIME)
+    auto_parse_enabled = utils.get_setting('auto_parse_enabled', '0') == '1'
+    
+    if not auto_parse_enabled:
+        return
+    
+    try:
+        hour, minute = map(int, schedule_time.split(':'))
+        scheduler.add_job(
+            run_scheduled_parse,
+            'cron',
+            hour=hour,
+            minute=minute,
+            timezone='Europe/Moscow'
+        )
+        print(f"⏰ Запланирован ежедневный парсинг на {hour:02d}:{minute:02d}")
+    except Exception as e:
+        print(f"❌ Ошибка настройки расписания: {str(e)}")
+
+def run_scheduled_parse():
+    """Запуск парсинга по расписанию"""
+    global parsing_in_progress
+    
+    if parsing_in_progress:
+        print("⏳ Пропуск автоматического парсинга: уже выполняется другой парсинг")
+        return
+    
+    admin_id = os.getenv("TELEGRAM_ADMIN_ID")
+    if not admin_id:
+        print("❌ ADMIN_ID не задан, автоматический парсинг не запущен")
+        return
+    
+    print(f"⏰ Запуск автоматического парсинга по расписанию")
+    parsing_in_progress = True
+    
+    # Сбрасываем состояние логов
+    global current_log_message
+    current_log_message = None
+    while not log_queue.empty():
+        log_queue.get()
+    
+    # Запускаем парсинг в отдельном потоке
+    threading.Thread(
+        target=run_parser, 
+        args=(config.DEFAULT_TYPE,),
+        kwargs={'is_scheduled': True},
+        daemon=True
+    ).start()
+
 async def log_updater(chat_id: int):
     """Периодически обновляет сообщение с логами"""
     global parsing_in_progress
     
     while parsing_in_progress or not log_queue.empty():
         await update_log_message(chat_id)
-        await asyncio.sleep(2)  # Пауза между обновлениями
+        await asyncio.sleep(2)
     
     # Финальное обновление
     await update_log_message(chat_id)
     
-    # Отправляем результат
+    # Отправляем результат только если парсинг завершен
+    if not parsing_in_progress:
+        await send_parse_results(chat_id)
+
+async def send_parse_results(chat_id: int):
+    """Отправляет результаты парсинга администратору"""
     try:
         # Ищем последний созданный файл с номерами
         output_dir = "output"
@@ -1049,49 +1202,47 @@ async def log_updater(chat_id: int):
             await bot.send_document(
                 chat_id=chat_id,
                 document=file,
-                caption="📄 Результат парсинга"
+                caption="📄 Результат автоматического парсинга"
             )
             
             # Запускаем автоудаление файла через 10 секунд
             asyncio.create_task(delete_file_after_delay(file_path, delay_seconds=10))
-            
-            # Спрašиваем о дальнейшем парсинге
-            keyboard = create_author_type_keyboard()
-            await bot.send_message(
-                chat_id=chat_id,
-                text="🎯 Какие типы авторов еще нужно спарсить?\n\n"
-                     "Выберите тип из списка ниже или нажмите 'Парсинг завершен', если больше ничего не нужно:\n\n"
-                     "⚠️ Внимание: файл с результатами будет автоматически удален через 10 секунд для экономии места.",
-                reply_markup=keyboard
-            )
         else:
             await bot.send_message(
                 chat_id, 
                 "❌ Файл с результатами не найден.\n\n"
                 "Возможно, не было найдено номеров для выбранного типа авторов."
             )
-            
-            # Все равно спрашиваем о дальнейшем парсинге
-            keyboard = create_author_type_keyboard()
-            await bot.send_message(
-                chat_id=chat_id,
-                text="🎯 Хотите попробовать другой тип авторов?",
-                reply_markup=keyboard
-            )
     except Exception as e:
-        await bot.send_message(chat_id, f"❌ Не удалось отправить файл: {str(e)}")
-        
-        # В случае ошибки тоже спрашиваем о дальнейшем парсинге
-        keyboard = create_author_type_keyboard()
-        await bot.send_message(
-            chat_id=chat_id,
-            text="🎯 Что будем парсить дальше?",
-            reply_markup=keyboard
-        )
+        await bot.send_message(chat_id, f"❌ Не удалось отправить результаты: {str(e)}")
 
 async def main():
     """Основная функция запуска бота"""
-    await dp.start_polling(bot)
+    global bot_task
+    
+    # Настраиваем автоматический парсинг при запуске
+    schedule_daily_parse()
+    scheduler.start()
+    
+    # Запускаем бота в фоновой задаче
+    bot_task = asyncio.create_task(dp.start_polling(bot))
+    
+    # Бесконечный цикл для проверки состояния парсинга
+    while True:
+        try:
+            # Если идет автоматический парсинг, обновляем логи
+            if parsing_in_progress:
+                admin_id = os.getenv("TELEGRAM_ADMIN_ID")
+                if admin_id:
+                    await log_updater(int(admin_id))
+            
+            # Проверяем каждые 10 секунд
+            await asyncio.sleep(10)
+        except Exception as e:
+            print(f"❌ Ошибка в основном цикле: {str(e)}")
+            # Перезапускаем задачу бота при необходимости
+            if bot_task.done():
+                bot_task = asyncio.create_task(dp.start_polling(bot))
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -7,16 +7,15 @@
       "siteBlockId": 6243
     },
     "318735316": {
-      "phone": "+7 (345) 256-96-67",
-      "notFormattedPhone": "73452569667",
+      "phone": "+7 (351) 272-44-84",
+      "notFormattedPhone": "73512724484",
       "source": "api",
       "siteBlockId": 12466
     },
     "313030324": {
-      "phone": "+7 (345) 221-28-06",
-      "notFormattedPhone": "73452212806",
-      "source": "api",
-      "siteBlockId": 7470
+      "phone": "не удалось получить",
+      "notFormattedPhone": "",
+      "source": "failed"
     },
     "314479801": {
       "phone": "+7 (345) 265-87-74",
@@ -25,8 +24,8 @@
       "siteBlockId": 6243
     },
     "309891945": {
-      "phone": "+7 (345) 256-96-67",
-      "notFormattedPhone": "73452569667",
+      "phone": "+7 (351) 272-44-84",
+      "notFormattedPhone": "73512724484",
       "source": "api",
       "siteBlockId": 12466
     },
@@ -37,10 +36,9 @@
       "siteBlockId": 6242
     },
     "311246361": {
-      "phone": "+7 (345) 221-28-06",
-      "notFormattedPhone": "73452212806",
-      "source": "api",
-      "siteBlockId": 7470
+      "phone": "не удалось получить",
+      "notFormattedPhone": "",
+      "source": "failed"
     },
     "307321571": {
       "phone": "+7 (345) 265-84-50",
@@ -55,8 +53,8 @@
       "siteBlockId": 6242
     },
     "318924445": {
-      "phone": "+7 (345) 265-82-26",
-      "notFormattedPhone": "73452658226",
+      "phone": "+7 (345) 265-82-19",
+      "notFormattedPhone": "73452658219",
       "source": "api",
       "siteBlockId": 9290
     },
@@ -67,8 +65,8 @@
       "siteBlockId": 8860
     },
     "316509068": {
-      "phone": "+7 (345) 265-82-26",
-      "notFormattedPhone": "73452658226",
+      "phone": "+7 (345) 265-82-19",
+      "notFormattedPhone": "73452658219",
       "source": "api",
       "siteBlockId": 9290
     },
