@@ -1,0 +1,88 @@
+{
+  "data": {
+    "314480089": {
+      "phone": "+7 (345) 265-87-74",
+      "notFormattedPhone": "73452658774",
+      "source": "api",
+      "siteBlockId": 6243
+    },
+    "318735316": {
+      "phone": "+7 (345) 256-96-67",
+      "notFormattedPhone": "73452569667",
+      "source": "api",
+      "siteBlockId": 12466
+    },
+    "313030324": {
+      "phone": "+7 (345) 221-28-06",
+      "notFormattedPhone": "73452212806",
+      "source": "api",
+      "siteBlockId": 7470
+    },
+    "314479801": {
+      "phone": "+7 (345) 265-87-74",
+      "notFormattedPhone": "73452658774",
+      "source": "api",
+      "siteBlockId": 6243
+    },
+    "309891945": {
+      "phone": "+7 (345) 256-96-67",
+      "notFormattedPhone": "73452569667",
+      "source": "api",
+      "siteBlockId": 12466
+    },
+    "300648930": {
+      "phone": "+7 (345) 265-81-79",
+      "notFormattedPhone": "73452658179",
+      "source": "api",
+      "siteBlockId": 6242
+    },
+    "311246361": {
+      "phone": "+7 (345) 221-28-06",
+      "notFormattedPhone": "73452212806",
+      "source": "api",
+      "siteBlockId": 7470
+    },
+    "307321571": {
+      "phone": "+7 (345) 265-84-50",
+      "notFormattedPhone": "73452658450",
+      "source": "api",
+      "siteBlockId": 12413
+    },
+    "313924136": {
+      "phone": "+7 (345) 265-81-79",
+      "notFormattedPhone": "73452658179",
+      "source": "api",
+      "siteBlockId": 6242
+    },
+    "318924445": {
+      "phone": "+7 (345) 265-82-26",
+      "notFormattedPhone": "73452658226",
+      "source": "api",
+      "siteBlockId": 9290
+    },
+    "313121172": {
+      "phone": "+7 (351) 272-43-07",
+      "notFormattedPhone": "73512724307",
+      "source": "api",
+      "siteBlockId": 8860
+    },
+    "316509068": {
+      "phone": "+7 (345) 265-82-26",
+      "notFormattedPhone": "73452658226",
+      "source": "api",
+      "siteBlockId": 9290
+    },
+    "314778998": {
+      "phone": "+7 (351) 272-43-07",
+      "notFormattedPhone": "73512724307",
+      "source": "api",
+      "siteBlockId": 8860
+    },
+    "312466136": {
+      "phone": "+7 (345) 265-86-51",
+      "notFormattedPhone": "73452658651",
+      "source": "api",
+      "siteBlockId": 12214
+    }
+  }
+}

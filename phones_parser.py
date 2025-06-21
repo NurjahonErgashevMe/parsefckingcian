@@ -8,9 +8,10 @@ from requests.exceptions import RequestException
 import utils
 import config
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+import config
 
 class CianPhoneParser:
-    def __init__(self, max_phones=50, log_callback=None, clear_existing=False, author_type=None):
+    def __init__(self, max_phones=50, log_callback=None, clear_existing=False, author_type=config.DEFAULT_TYPE):
         utils.ensure_output_dir()
         self.parsed_data = {}
         self.max_phones = max_phones

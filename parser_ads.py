@@ -117,7 +117,8 @@ def parse_cian_ads(log_callback=None):
         parser = cianparser.CianParser(location=region_name)
         data = parser.get_flats(deal_type="sale", rooms=(1,2), additional_settings={
             "start_page": 1,
-            "end_page": 1})
+            "end_page": 1
+        })
         
         # Проверяем и корректируем URL
         for item in data:
