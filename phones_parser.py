@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import config
 
 class CianPhoneParser:
-    def __init__(self, max_phones=50, log_callback=None, clear_existing=False, author_type=config.DEFAULT_TYPE, is_scheduled=False):
+    def __init__(self, max_phones=1000, log_callback=None, clear_existing=False, author_type=config.DEFAULT_TYPE, is_scheduled=False):
         utils.ensure_output_dir()
         self.parsed_data = {}
         self.max_phones = max_phones

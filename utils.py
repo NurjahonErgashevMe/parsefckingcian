@@ -2,10 +2,12 @@ import os
 import re
 import json
 import sqlite3
+import time
 from urllib.parse import urlparse
 from datetime import datetime
 from contextlib import closing
 from database import init_db
+import config
 
 DB_NAME = "cian_bot.db"
 
@@ -28,6 +30,26 @@ def clear_parsing_data():
                 print(f"🗑️ Удален файл: {file_path}")
             except Exception as e:
                 print(f"❌ Ошибка при удалении файла {file_path}: {e}")
+
+def get_file_age(file_path):
+    """Возвращает возраст файла в днях"""
+    if not os.path.exists(file_path):
+        return None
+    modified_time = os.path.getmtime(file_path)
+    return (time.time() - modified_time) / (24 * 3600)  # Конвертируем в дни
+
+def should_refresh_region_file():
+    """Проверяет, нужно ли обновить файл региона"""
+    region_file = get_region_file()
+    if not os.path.exists(region_file):
+        return True
+    return get_file_age(region_file) > 1  # Старше 1 дня
+
+def remove_region_file():
+    """Удаляет файл региона"""
+    region_file = get_region_file()
+    if os.path.exists(region_file):
+        os.remove(region_file)
 
 def get_region_name():
     """Получает название региона из базы данных"""
@@ -62,6 +84,11 @@ def get_max_price():
     value = get_setting('max_price', '')
     return int(value) if value else None
 
+def get_author_types():
+    """Получает выбранные типы авторов"""
+    types_str = get_setting('author_types', 'developer')
+    return types_str.split(',') if types_str else []
+
 def set_region(region_name, region_id):
     """Устанавливает регион в настройках"""
     set_setting('region', region_name)
@@ -94,6 +121,10 @@ def set_max_price(price):
     """Устанавливает максимальную цену"""
     set_setting('max_price', str(price) if price is not None else '')
     clear_parsing_data()
+
+def set_author_types(author_types):
+    """Устанавливает выбранные типы авторов"""
+    set_setting('author_types', ','.join(author_types))
 
 def reset_settings():
     """Сбрасывает все настройки к значениям по умолчанию"""

@@ -396,6 +396,52 @@ def create_price_keyboard():
         ]
     ])
 
+def create_author_type_selection_keyboard():
+    """Создает клавиатуру для выбора типов авторов с тремя кнопками в ряд"""
+    current_authors = utils.get_author_types()
+    author_types = [
+        ('developer', '🏗️ Застройщики'),
+        ('real_estate_agent', '🏢 Агентства'),
+        ('homeowner', '🏠 Владельцы'),
+        ('realtor', '👔 Риэлторы')
+    ]
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+    row = []
+    
+    for i, (auth_type, auth_name) in enumerate(author_types, 1):
+        selected = "✅ " if auth_type in current_authors else ""
+        btn = InlineKeyboardButton(
+            text=f"{selected}{auth_name}",
+            callback_data=f"toggle_author_{auth_type}"
+        )
+        row.append(btn)
+        
+        # Добавляем новую строку после каждых 3 кнопок
+        if i % 3 == 0:
+            keyboard.inline_keyboard.append(row)
+            row = []
+    
+    # Добавляем оставшиеся кнопки
+    if row:
+        keyboard.inline_keyboard.append(row)
+    
+    # Кнопки управления
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(
+            text="💾 Сохранить выбор",
+            callback_data="save_authors"
+        )
+    ])
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(
+            text="🔙 Назад",
+            callback_data="back_to_settings"
+        )
+    ])
+    
+    return keyboard
+
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     """Обработчик команды /start"""
@@ -445,6 +491,7 @@ async def parsing_settings(message: types.Message):
     current_min_price = utils.get_min_price()
     current_max_price = utils.get_max_price()
     auto_parse_enabled = utils.get_setting('auto_parse_enabled', '0') == '1'
+    current_authors = utils.get_author_types()
     
     # Получаем информацию о файле региона
     region_info = utils.get_region_info()
@@ -468,16 +515,32 @@ async def parsing_settings(message: types.Message):
     min_price_text = "не задано" if not current_min_price else f"{current_min_price:,} ₽".replace(",", " ")
     max_price_text = "не задано" if not current_max_price else f"{current_max_price:,} ₽".replace(",", " ")
     
+    # Форматируем типы авторов
+    author_names = {
+        'developer': '🏗️',
+        'real_estate_agent': '🏢',
+        'homeowner': '🏠',
+        'realtor': '👔'
+    }
+    authors_text = ", ".join([f"{author_names.get(a, '❓')} {a}" for a in current_authors])
+    
+    # Обновленная клавиатура с эмодзи и 3 кнопками в ряд
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Изменить регион")],
-            [KeyboardButton(text="Список регионов")],
-            [KeyboardButton(text="Выбрать комнаты")],
-            [KeyboardButton(text="Настроить этажи")],
-            [KeyboardButton(text="Настроить цены")],
-            [KeyboardButton(text="Автопарсинг")],
-            [KeyboardButton(text="Сбросить настройки")],
-            [KeyboardButton(text="Назад в меню")]
+            [
+                KeyboardButton(text="📍 Изменить регион"), 
+                KeyboardButton(text="📋 Список регионов"), 
+                KeyboardButton(text="🚪 Выбрать комнаты")
+            ],
+            [
+                KeyboardButton(text="🏢 Настроить этажи"), 
+                KeyboardButton(text="💰 Настроить цены"), 
+                KeyboardButton(text="⏰ Автопарсинг")
+            ],
+            [
+                KeyboardButton(text="🔄 Сбросить настройки"), 
+                KeyboardButton(text="🔙 Назад в меню")
+            ]
         ],
         resize_keyboard=True
     )
@@ -491,6 +554,7 @@ async def parsing_settings(message: types.Message):
         f"• <b>Макс. этаж:</b> {max_floor_text}\n"
         f"• <b>Мин. цена:</b> {min_price_text}\n"
         f"• <b>Макс. цена:</b> {max_price_text}\n"
+        f"• <b>Типы авторов:</b> {authors_text}\n"
         f"• <b>Автопарсинг:</b> {'✅ включен' if auto_parse_enabled else '❌ выключен'}\n"
         f"{created_at_info}\n"
         f"Выберите действие:",
@@ -498,7 +562,7 @@ async def parsing_settings(message: types.Message):
         parse_mode="HTML"
     )
 
-@dp.message(F.text == "Автопарсинг")
+@dp.message(F.text.endswith("Автопарсинг"))
 async def auto_parse_settings(message: types.Message):
     """Настройки автоматического парсинга"""
     auto_parse_enabled = utils.get_setting('auto_parse_enabled', '0') == '1'
@@ -519,6 +583,12 @@ async def auto_parse_settings(message: types.Message):
         ],
         [
             InlineKeyboardButton(
+                text="👥 Выбрать типы авторов",
+                callback_data="select_author_types"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="🔙 Назад",
                 callback_data="back_to_settings"
             )
@@ -534,6 +604,53 @@ async def auto_parse_settings(message: types.Message):
         parse_mode="HTML"
     )
 
+@dp.callback_query(F.data == "change_schedule_time")
+async def change_schedule_time(callback: types.CallbackQuery, state: FSMContext):
+    """Изменение времени автоматического парсинга"""
+    # Добавляем кнопку "Отмена"
+    cancel_button = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="❌ Отмена")]],
+        resize_keyboard=True
+    )
+    
+    await callback.message.answer(
+        "🕒 Введите новое время для автоматического парсинга в формате ЧЧ:ММ (например, 03:00):",
+        reply_markup=cancel_button
+    )
+    await state.set_state("waiting_schedule_time")
+
+@dp.message(F.text == "❌ Отмена", StateFilter("waiting_schedule_time"))
+async def cancel_time_change(message: types.Message, state: FSMContext):
+    """Обработчик отмены изменения времени"""
+    await state.clear()
+    await message.answer("❌ Изменение времени отменено.", reply_markup=ReplyKeyboardRemove())
+    await auto_parse_settings(message)
+
+@dp.message(F.text.regexp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'), StateFilter("waiting_schedule_time"))
+async def process_schedule_time(message: types.Message, state: FSMContext):
+    """Обработка нового времени для расписания"""
+    new_time = message.text.strip()
+    utils.set_setting('schedule_time', new_time)
+    
+    # Обновляем задачу в планировщике
+    scheduler.remove_all_jobs()
+    schedule_daily_parse()
+    
+    await message.answer(
+        f"✅ Время автоматического парсинга установлено на {new_time}",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    await state.clear()
+    await auto_parse_settings(message)
+
+@dp.message(StateFilter("waiting_schedule_time"))
+async def invalid_schedule_time(message: types.Message):
+    """Обработка неверного формата времени"""
+    await message.answer(
+        "❌ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 03:00) "
+        "или нажмите '❌ Отмена' для отмены операции"
+    )
+
 @dp.callback_query(F.data.startswith("toggle_auto_parse_"))
 async def toggle_auto_parse(callback: types.CallbackQuery):
     """Включение/выключение автоматического парсинга"""
@@ -547,40 +664,52 @@ async def toggle_auto_parse(callback: types.CallbackQuery):
     
     await auto_parse_settings(callback.message)
 
-@dp.callback_query(F.data == "change_schedule_time")
-async def change_schedule_time(callback: types.CallbackQuery, state: FSMContext):
-    """Изменение времени автоматического парсинга"""
-    await callback.message.answer(
-        "🕒 Введите новое время для автоматического парсинга в формате ЧЧ:ММ (например, 03:00):",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    await state.set_state("waiting_schedule_time")
-
-@dp.message(F.text.regexp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'), StateFilter("waiting_schedule_time"))
-async def process_schedule_time(message: types.Message, state: FSMContext):
-    """Обработка нового времени для расписания"""
-    new_time = message.text.strip()
-    utils.set_setting('schedule_time', new_time)
-    
-    # Обновляем задачу в планировщике
-    scheduler.remove_all_jobs()
-    schedule_daily_parse()
-    
-    await message.answer(f"✅ Время автоматического парсинга установлено на {new_time}")
-    await state.clear()
-    await auto_parse_settings(message)
-
-@dp.message(StateFilter("waiting_schedule_time"))
-async def invalid_schedule_time(message: types.Message):
-    """Обработка неверного формата времени"""
-    await message.answer("❌ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 03:00)")
-
 @dp.callback_query(F.data == "back_to_settings")
 async def back_to_settings_from_auto(callback: types.CallbackQuery):
     """Возврат в настройки"""
     await parsing_settings(callback.message)
 
-@dp.message(F.text == "Изменить регион")
+@dp.callback_query(F.data == "select_author_types")
+async def select_author_types(callback: types.CallbackQuery):
+    """Выбор типов авторов для автопарсинга"""
+    await callback.message.edit_text(
+        "👥 Выберите типы авторов для автоматического парсинга:",
+        reply_markup=create_author_type_selection_keyboard()
+    )
+
+@dp.callback_query(F.data.startswith("toggle_author_"))
+async def toggle_author(callback: types.CallbackQuery):
+    """Переключение типа автора"""
+    auth_type = callback.data.split("_")[-1]
+    current_authors = utils.get_author_types()
+    
+    if auth_type in current_authors:
+        current_authors.remove(auth_type)
+    else:
+        current_authors.append(auth_type)
+    
+    utils.set_author_types(current_authors)
+    await callback.message.edit_reply_markup(
+        reply_markup=create_author_type_selection_keyboard()
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "save_authors")
+async def save_authors(callback: types.CallbackQuery):
+    """Сохранение выбранных типов авторов"""
+    current_authors = utils.get_author_types()
+    author_names = {
+        'developer': 'застройщики',
+        'real_estate_agent': 'агентства',
+        'homeowner': 'владельцы',
+        'realtor': 'риэлторы'
+    }
+    selected_names = [author_names.get(a, a) for a in current_authors]
+    
+    await callback.answer(f"✅ Сохранены типы авторов: {', '.join(selected_names)}")
+    await auto_parse_settings(callback.message)
+
+@dp.message(F.text.endswith("Изменить регион"))
 async def change_region(message: types.Message, state: FSMContext):
     """Обработчик кнопки изменения региона"""
     await state.set_state(RegionState.waiting_region_name)
@@ -602,7 +731,7 @@ async def change_region(message: types.Message, state: FSMContext):
         parse_mode="HTML"
     )
 
-@dp.message(F.text == "Список регионов")
+@dp.message(F.text.endswith("Список регионов"))
 async def send_regions_list(message: types.Message):
     """Отправляет список доступных регионов в виде файла"""
     try:
@@ -632,7 +761,7 @@ async def send_regions_list(message: types.Message):
     except Exception as e:
         await message.answer(f"❌ Не удалось сгенерировать список регионов: {str(e)}")
 
-@dp.message(F.text == "Выбрать комнаты")
+@dp.message(F.text.endswith("Выбрать комнаты"))
 async def select_rooms(message: types.Message, state: FSMContext):
     """Обработчик кнопки выбора комнат"""
     current_rooms = utils.get_rooms()
@@ -650,7 +779,7 @@ async def select_rooms(message: types.Message, state: FSMContext):
     await state.set_data({"selected_rooms": current_rooms})
     await state.set_state(RoomState.selecting_rooms)
 
-@dp.message(F.text == "Настроить этажи")
+@dp.message(F.text.endswith("Настроить этажи"))
 async def setup_floors(message: types.Message, state: FSMContext):
     """Запуск настройки этажей"""
     await state.set_state(MinFloorState.selecting_range)
@@ -659,7 +788,7 @@ async def setup_floors(message: types.Message, state: FSMContext):
         reply_markup=create_floor_range_keyboard()
     )
 
-@dp.message(F.text == "Настроить цены")
+@dp.message(F.text.endswith("Настроить цены"))
 async def setup_prices(message: types.Message, state: FSMContext):
     """Запуск настройки цен"""
     current_min_price = utils.get_min_price()
@@ -762,7 +891,7 @@ async def save_prices(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer("✅ Настройки цен сохранены!")
     await parsing_settings(callback.message)
 
-@dp.message(F.text == "Сбросить настройки")
+@dp.message(F.text.endswith("Сбросить настройки"))
 async def reset_settings(message: types.Message):
     """Сброс всех настроек к значениям по умолчанию"""
     # Сбрасываем настройки
@@ -859,7 +988,7 @@ async def min_floor_selected(callback: types.CallbackQuery, state: FSMContext):
     if action == "select":  # Выбрать все
         new_floors = list(range(state_data['range_start'], state_data['range_end'] + 1))
         utils.set_min_floor(new_floors)
-        await callback.answer("Все этажи в диапазоне выбраны!")
+        await callback.answer("Все этажи в диапазоне выбраны!") 
     elif action == "save":  # Сохранить
         # Сохраняем минимальные этажи
         current_min_floors = utils.get_min_floor()
@@ -1058,7 +1187,7 @@ async def process_region_name(message: types.Message, state: FSMContext):
                 "❌ Регион не найден. Пожалуйста, введите название точно:"
             )
 
-@dp.message(F.text == "Назад в меню")
+@dp.message(F.text.endswith("Назад в меню"))
 async def back_to_menu(message: types.Message, state: FSMContext):
     """Обработчик кнопки возврата в меню"""
     await state.clear()
@@ -1163,13 +1292,19 @@ def run_scheduled_parse():
     while not log_queue.empty():
         log_queue.get()
     
-    # Запускаем парсинг в отдельном потоке
-    threading.Thread(
-        target=run_parser, 
-        args=(config.DEFAULT_TYPE,),
-        kwargs={'is_scheduled': True},
-        daemon=True
-    ).start()
+    # Получаем выбранные типы авторов
+    author_types = utils.get_author_types()
+    if not author_types:
+        author_types = ['developer']  # По умолчанию застройщики
+    
+    # Запускаем парсинг для каждого выбранного типа
+    for auth_type in author_types:
+        threading.Thread(
+            target=run_parser, 
+            args=(auth_type,),
+            kwargs={'is_scheduled': True},
+            daemon=True
+        ).start()
 
 async def log_updater(chat_id: int):
     """Периодически обновляет сообщение с логами"""

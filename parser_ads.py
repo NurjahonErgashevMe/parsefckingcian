@@ -72,6 +72,11 @@ def parse_cian_ads(log_callback=None):
     utils.ensure_output_dir()
     
     try:
+        # Проверяем возраст файла региона
+        if utils.should_refresh_region_file():
+            _log(log_callback, "⚠️ Данные региона устарели (>1 дня). Удаляем и обновляем...")
+            utils.remove_region_file()
+        
         # Создаем lock-файл
         utils.start_parsing()
         
@@ -101,7 +106,7 @@ def parse_cian_ads(log_callback=None):
         # Формируем дополнительные настройки
         additional_settings = {
             "start_page": 1,
-            "end_page": 1,
+            "end_page": 20,
         }
         
         if min_floor:
@@ -115,10 +120,7 @@ def parse_cian_ads(log_callback=None):
         
         # Парсим данные
         parser = cianparser.CianParser(location=region_name)
-        data = parser.get_flats(deal_type="sale", rooms=(1,2), additional_settings={
-            "start_page": 1,
-            "end_page": 1
-        })
+        data = parser.get_flats(deal_type="sale", rooms=rooms, additional_settings=additional_settings)
         
         # Проверяем и корректируем URL
         for item in data:

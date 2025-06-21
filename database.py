@@ -21,6 +21,7 @@ def init_db():
         default_max_floor = ''  # Пустое значение = все этажи
         default_min_price = ''  # Пустое значение = нет ограничений
         default_max_price = ''  # Пустое значение = нет ограничений
+        default_author_types = 'developer'  # Типы авторов по умолчанию
         
         # Проверяем, есть ли уже настройки
         cursor.execute("SELECT value FROM settings WHERE key = 'region'")
@@ -54,6 +55,11 @@ def init_db():
             cursor.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?)",
                 ('max_price', default_max_price)
+            )
+            # Добавляем настройки типов авторов
+            cursor.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ('author_types', default_author_types)
             )
         conn.commit()
 
