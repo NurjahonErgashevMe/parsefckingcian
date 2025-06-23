@@ -48,7 +48,7 @@ def main():
         parser.parse()
     else:
         print("Запускаем парсинг объявлений...")
-        success, developer_count = parser_ads.parse_cian_ads()
+        success, developer_count = parser_ads.parse_cian_ads(log_callback=print)
         if success:
             print("\n" + "="*50)
             print(f"Данные объявлений сохранены в {region_file}")

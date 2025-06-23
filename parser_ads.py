@@ -106,7 +106,7 @@ def parse_cian_ads(log_callback=None):
         # Формируем дополнительные настройки
         additional_settings = {
             "start_page": 1,
-            "end_page": 20,
+            "end_page": 1,
         }
         
         if min_floor:
@@ -120,7 +120,8 @@ def parse_cian_ads(log_callback=None):
         
         # Парсим данные
         parser = cianparser.CianParser(location=region_name)
-        data = parser.get_flats(deal_type="sale", rooms=rooms, additional_settings=additional_settings)
+        print(rooms , 'rooms')
+        data = parser.get_flats(deal_type="sale", rooms=tuple(rooms), additional_settings=additional_settings)
         
         # Проверяем и корректируем URL
         for item in data:

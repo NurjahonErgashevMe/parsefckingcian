@@ -140,19 +140,20 @@ def reset_settings():
     
     # Восстанавливаем время парсинга из конфига
     set_setting('schedule_time', config.SCHEDULE_TIME)
-
+    
 def get_region_file():
     """Возвращает путь к файлу регионов с ID региона"""
     region_id = get_region_id()
-    return f"output/regions_{region_id}.json"
+    return os.path.join(config.OUTPUT_DIR, f"regions_{region_id}.json")
 
 def get_phones_file():
     """Возвращает путь к файлу с номерами"""
-    return "output/data.json"
+    return os.path.join(config.OUTPUT_DIR, "data.json")
+
 
 def get_lock_file():
     """Возвращает путь к lock-файлу"""
-    return "output/parsing.lock"
+    return os.path.join(config.OUTPUT_DIR, "parsing.lock")
 
 def start_parsing():
     """Создает lock-файл для индикации начала парсинга"""

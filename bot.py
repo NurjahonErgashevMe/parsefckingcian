@@ -18,6 +18,11 @@ import pytz
 # Загрузка переменных окружения
 load_dotenv()
 
+# Проверка наличия ADMIN_ID
+ADMIN_ID = os.getenv("TELEGRAM_ADMIN_ID")
+if not ADMIN_ID:
+    raise ValueError("TELEGRAM_ADMIN_ID не установлен в .env файле")
+
 # Импорт модулей парсера
 import utils
 import parser_ads
@@ -58,6 +63,16 @@ class MaxFloorState(StatesGroup):
 class PriceState(StatesGroup):
     min_price = State()
     max_price = State()
+
+async def check_admin_access(user_id: int, message: types.Message = None, callback: types.CallbackQuery = None) -> bool:
+    """Проверяет доступ пользователя к функциям бота"""
+    if str(user_id) != ADMIN_ID:
+        if message:
+            await message.answer("⛔ Доступ запрещен. Вы не администратор.")
+        if callback:
+            await callback.answer("⛔ Доступ запрещен. Вы не администратор.", show_alert=True)
+        return False
+    return True
 
 async def delete_file_after_delay(file_path: str, delay_seconds: int = 10):
     """Удаляет файл через указанное количество секунд"""
@@ -445,6 +460,10 @@ def create_author_type_selection_keyboard():
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     """Обработчик команды /start"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     await message.answer(
         "👋 Привет! Я бот для парсинга телефонных номеров с CIAN.\n\n"
         "🎯 Бот умеет парсить номера от разных типов авторов:\n"
@@ -460,6 +479,10 @@ async def start_command(message: types.Message):
 @dp.message(lambda message: message.text == "🚀 Парсить")
 async def parse_command(message: types.Message):
     """Обработчик команды /parse - начинает с застройщиков"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     global parsing_in_progress, current_log_message
     
     if parsing_in_progress:
@@ -483,6 +506,10 @@ async def parse_command(message: types.Message):
 @dp.message(F.text == "⚙️ Настройки парсинга")
 async def parsing_settings(message: types.Message):
     """Обработчик кнопки настроек парсинга"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     current_region = utils.get_region_name()
     region_id = utils.get_region_id()
     current_rooms = utils.get_rooms()
@@ -565,6 +592,10 @@ async def parsing_settings(message: types.Message):
 @dp.message(F.text.endswith("Автопарсинг"))
 async def auto_parse_settings(message: types.Message):
     """Настройки автоматического парсинга"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     auto_parse_enabled = utils.get_setting('auto_parse_enabled', '0') == '1'
     schedule_time = utils.get_setting('schedule_time', config.SCHEDULE_TIME)
     
@@ -607,6 +638,10 @@ async def auto_parse_settings(message: types.Message):
 @dp.callback_query(F.data == "change_schedule_time")
 async def change_schedule_time(callback: types.CallbackQuery, state: FSMContext):
     """Изменение времени автоматического парсинга"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     # Добавляем кнопку "Отмена"
     cancel_button = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="❌ Отмена")]],
@@ -622,6 +657,10 @@ async def change_schedule_time(callback: types.CallbackQuery, state: FSMContext)
 @dp.message(F.text == "❌ Отмена", StateFilter("waiting_schedule_time"))
 async def cancel_time_change(message: types.Message, state: FSMContext):
     """Обработчик отмены изменения времени"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     await state.clear()
     await message.answer("❌ Изменение времени отменено.", reply_markup=ReplyKeyboardRemove())
     await auto_parse_settings(message)
@@ -629,6 +668,10 @@ async def cancel_time_change(message: types.Message, state: FSMContext):
 @dp.message(F.text.regexp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'), StateFilter("waiting_schedule_time"))
 async def process_schedule_time(message: types.Message, state: FSMContext):
     """Обработка нового времени для расписания"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     new_time = message.text.strip()
     utils.set_setting('schedule_time', new_time)
     
@@ -646,6 +689,10 @@ async def process_schedule_time(message: types.Message, state: FSMContext):
 @dp.message(StateFilter("waiting_schedule_time"))
 async def invalid_schedule_time(message: types.Message):
     """Обработка неверного формата времени"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     await message.answer(
         "❌ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 03:00) "
         "или нажмите '❌ Отмена' для отмены операции"
@@ -654,6 +701,10 @@ async def invalid_schedule_time(message: types.Message):
 @dp.callback_query(F.data.startswith("toggle_auto_parse_"))
 async def toggle_auto_parse(callback: types.CallbackQuery):
     """Включение/выключение автоматического парсинга"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     new_state = callback.data.split("_")[-1]
     utils.set_setting('auto_parse_enabled', new_state)
     
@@ -667,11 +718,19 @@ async def toggle_auto_parse(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "back_to_settings")
 async def back_to_settings_from_auto(callback: types.CallbackQuery):
     """Возврат в настройки"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     await parsing_settings(callback.message)
 
 @dp.callback_query(F.data == "select_author_types")
 async def select_author_types(callback: types.CallbackQuery):
     """Выбор типов авторов для автопарсинга"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     await callback.message.edit_text(
         "👥 Выберите типы авторов для автоматического парсинга:",
         reply_markup=create_author_type_selection_keyboard()
@@ -680,6 +739,10 @@ async def select_author_types(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("toggle_author_"))
 async def toggle_author(callback: types.CallbackQuery):
     """Переключение типа автора"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     auth_type = callback.data.split("_")[-1]
     current_authors = utils.get_author_types()
     
@@ -697,6 +760,10 @@ async def toggle_author(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "save_authors")
 async def save_authors(callback: types.CallbackQuery):
     """Сохранение выбранных типов авторов"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     current_authors = utils.get_author_types()
     author_names = {
         'developer': 'застройщики',
@@ -712,6 +779,10 @@ async def save_authors(callback: types.CallbackQuery):
 @dp.message(F.text.endswith("Изменить регион"))
 async def change_region(message: types.Message, state: FSMContext):
     """Обработчик кнопки изменения региона"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     await state.set_state(RegionState.waiting_region_name)
     
     # Отправляем подсказку с популярными регионами
@@ -734,6 +805,10 @@ async def change_region(message: types.Message, state: FSMContext):
 @dp.message(F.text.endswith("Список регионов"))
 async def send_regions_list(message: types.Message):
     """Отправляет список доступных регионов в виде файла"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     try:
         # Генерируем файл со списком регионов
         regions_file = generate_regions_file()
@@ -764,6 +839,10 @@ async def send_regions_list(message: types.Message):
 @dp.message(F.text.endswith("Выбрать комнаты"))
 async def select_rooms(message: types.Message, state: FSMContext):
     """Обработчик кнопки выбора комнат"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     current_rooms = utils.get_rooms()
     keyboard = create_rooms_keyboard(current_rooms)
     
@@ -782,6 +861,10 @@ async def select_rooms(message: types.Message, state: FSMContext):
 @dp.message(F.text.endswith("Настроить этажи"))
 async def setup_floors(message: types.Message, state: FSMContext):
     """Запуск настройки этажей"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     await state.set_state(MinFloorState.selecting_range)
     await message.answer(
         "Выберите диапазон для МИНИМАЛЬНОГО этажа:",
@@ -791,6 +874,10 @@ async def setup_floors(message: types.Message, state: FSMContext):
 @dp.message(F.text.endswith("Настроить цены"))
 async def setup_prices(message: types.Message, state: FSMContext):
     """Запуск настройки цен"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     current_min_price = utils.get_min_price()
     current_max_price = utils.get_max_price()
     
@@ -809,6 +896,10 @@ async def setup_prices(message: types.Message, state: FSMContext):
 @dp.callback_query(F.data == "min_price_set")
 async def set_min_price(callback: types.CallbackQuery, state: FSMContext):
     """Запрос минимальной цены"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     await callback.message.edit_text(
         "⬇️ Введите минимальную цену в рублях (например: 5000000):\n\n"
         "Цена должна быть целым числом без пробелов и других символов.",
@@ -821,6 +912,10 @@ async def set_min_price(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "max_price_set")
 async def set_max_price(callback: types.CallbackQuery, state: FSMContext):
     """Запрос максимальной цены"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     await callback.message.edit_text(
         "⬆️ Введите максимальную цену в рублях (например: 10000000):\n\n"
         "Цена должна быть целым числом без пробелов и других символов.",
@@ -833,6 +928,10 @@ async def set_max_price(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith(("min_price_clear", "max_price_clear")))
 async def clear_price(callback: types.CallbackQuery, state: FSMContext):
     """Очистка цены"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     price_type = "min_price" if callback.data.startswith("min_price") else "max_price"
     
     if price_type == "min_price":
@@ -846,6 +945,10 @@ async def clear_price(callback: types.CallbackQuery, state: FSMContext):
 @dp.message(PriceState.min_price, F.text)
 async def process_min_price(message: types.Message, state: FSMContext):
     """Обработка минимальной цены"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     if message.text == "❌ Без ограничений":
         utils.set_min_price(None)
         await message.answer("✅ Минимальная цена очищена")
@@ -863,6 +966,10 @@ async def process_min_price(message: types.Message, state: FSMContext):
 @dp.message(PriceState.max_price, F.text)
 async def process_max_price(message: types.Message, state: FSMContext):
     """Обработка максимальной цены"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     if message.text == "❌ Без ограничений":
         utils.set_max_price(None)
         await message.answer("✅ Максимальная цена очищена")
@@ -880,6 +987,10 @@ async def process_max_price(message: types.Message, state: FSMContext):
 @dp.callback_query(F.data == "clear_prices")
 async def clear_all_prices(callback: types.CallbackQuery, state: FSMContext):
     """Очистка всех цен"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     utils.set_min_price(None)
     utils.set_max_price(None)
     await callback.answer("✅ Все цены очищены")
@@ -888,12 +999,20 @@ async def clear_all_prices(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "save_prices")
 async def save_prices(callback: types.CallbackQuery, state: FSMContext):
     """Сохранение настроек цен"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     await callback.answer("✅ Настройки цен сохранены!")
     await parsing_settings(callback.message)
 
 @dp.message(F.text.endswith("Сбросить настройки"))
 async def reset_settings(message: types.Message):
     """Сброс всех настроек к значениям по умолчанию"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     # Сбрасываем настройки
     utils.reset_settings()
     
@@ -912,6 +1031,10 @@ async def reset_settings(message: types.Message):
 @dp.callback_query(RoomState.selecting_rooms, F.data.startswith("room_"))
 async def toggle_room(callback: types.CallbackQuery, state: FSMContext):
     """Обработчик переключения комнаты"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     room_num = int(callback.data.split("_")[1])
     state_data = await state.get_data()
     selected_rooms = state_data.get("selected_rooms", [])
@@ -933,6 +1056,10 @@ async def toggle_room(callback: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(RoomState.selecting_rooms, F.data == "save_rooms")
 async def save_rooms(callback: types.CallbackQuery, state: FSMContext):
     """Обработчик сохранения выбранных комнат"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     state_data = await state.get_data()
     selected_rooms = state_data.get("selected_rooms", [])
     
@@ -948,6 +1075,11 @@ async def save_rooms(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(MinFloorState.selecting_range, F.data.startswith("floor_range_"))
 async def min_floor_range_selected(callback: types.CallbackQuery, state: FSMContext):
+    """Обработчик выбора диапазона этажей"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     data = callback.data.split("_")
     if data[2] == "all":
         await state.update_data(range_start=0, range_end=0, range_name="Все этажи")
@@ -980,6 +1112,11 @@ async def min_floor_range_selected(callback: types.CallbackQuery, state: FSMCont
 
 @dp.callback_query(MinFloorState.selecting_floors, F.data.startswith("floor_"))
 async def min_floor_selected(callback: types.CallbackQuery, state: FSMContext):
+    """Обработчик выбора конкретного этажа"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     data_parts = callback.data.split("_")
     action = data_parts[1]
     state_data = await state.get_data()
@@ -1030,6 +1167,11 @@ async def min_floor_selected(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(MaxFloorState.selecting_range, F.data.startswith("floor_range_"))
 async def max_floor_range_selected(callback: types.CallbackQuery, state: FSMContext):
+    """Обработчик выбора диапазона этажей"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     data = callback.data.split("_")
     state_data = await state.get_data()
     current_min_floors = utils.get_min_floor()
@@ -1063,6 +1205,11 @@ async def max_floor_range_selected(callback: types.CallbackQuery, state: FSMCont
 
 @dp.callback_query(MaxFloorState.selecting_floors, F.data.startswith("floor_"))
 async def max_floor_selected(callback: types.CallbackQuery, state: FSMContext):
+    """Обработчик выбора конкретного этажа"""
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     data_parts = callback.data.split("_")
     action = data_parts[1]
     state_data = await state.get_data()
@@ -1135,6 +1282,10 @@ async def save_floors_settings(message: types.Message, state: FSMContext):
 @dp.message(RegionState.waiting_region_name)
 async def process_region_name(message: types.Message, state: FSMContext):
     """Обработчик ввода названия региона"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     # Проверяем, если пользователь хочет вернутьс
     if message.text == "Назад в настройки":
         await state.clear()
@@ -1190,6 +1341,10 @@ async def process_region_name(message: types.Message, state: FSMContext):
 @dp.message(F.text.endswith("Назад в меню"))
 async def back_to_menu(message: types.Message, state: FSMContext):
     """Обработчик кнопки возврата в меню"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     await state.clear()
     await message.answer(
         "Главное меню:",
@@ -1199,14 +1354,20 @@ async def back_to_menu(message: types.Message, state: FSMContext):
 @dp.message(F.text == "Назад в настройки")
 async def back_to_settings(message: types.Message, state: FSMContext):
     """Обработчик кнопки возврата в настройки"""
+    # Проверка доступа
+    if not await check_admin_access(message.from_user.id, message=message):
+        return
+        
     await state.clear()
     await parsing_settings(message)
 
 @dp.callback_query(AuthorTypeCallback.filter())
 async def handle_author_type_selection(callback: types.CallbackQuery, callback_data: AuthorTypeCallback):
     """Обработчик выбора типа автора"""
-    global parsing_in_progress, current_log_message
-    
+    # Проверка доступа
+    if not await check_admin_access(callback.from_user.id, callback=callback):
+        return
+        
     await callback.answer()
     
     if callback_data.type == "done":
@@ -1230,6 +1391,7 @@ async def handle_author_type_selection(callback: types.CallbackQuery, callback_d
     author_display = author_names.get(callback_data.type, callback_data.type)
     
     # Сбрасываем состояние логов
+    global current_log_message
     current_log_message = None
     while not log_queue.empty():
         log_queue.get()

@@ -1,7 +1,10 @@
 import os
 
 # Конфигурационные параметры
-OUTPUT_DIR = "output"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Конфигурационные параметры
+OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 REGIONS_FILE = os.path.join(OUTPUT_DIR, "regions.json")
 CODES_FILE = os.path.join(OUTPUT_DIR, "codes.txt")
 PHONES_FILE = os.path.join(OUTPUT_DIR, "data.json")
