@@ -8,10 +8,9 @@ from requests.exceptions import RequestException
 import utils
 import config
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-import config
 
 class CianPhoneParser:
-    def __init__(self, max_phones=1000, log_callback=None, clear_existing=False, author_type=config.DEFAULT_TYPE, is_scheduled=False):
+    def __init__(self, max_phones=None, log_callback=None, clear_existing=False, author_type=config.DEFAULT_TYPE, is_scheduled=False):
         utils.ensure_output_dir()
         self.parsed_data = {}
         self.max_phones = max_phones
@@ -39,7 +38,12 @@ class CianPhoneParser:
         
         self._log(f"[{self.start_time}] Начало парсинга телефонных номеров")
         self._log(f"🎯 Тип авторов: {author_display}")
-        self._log(f"📊 ОГРАНИЧЕНИЕ: Будет обработано не более {self.max_phones} номеров")
+        
+        # Измененный вывод информации об ограничении
+        if self.max_phones is None:
+            self._log("📊 ОГРАНИЧЕНИЕ: Без ограничений (будут обработаны все найденные объявления)")
+        else:
+            self._log(f"📊 ОГРАНИЧЕНИЕ: Будет обработано не более {self.max_phones} номеров")
         
         if self.is_scheduled:
             self._log("⏰ АВТОМАТИЧЕСКИЙ ПАРСИНГ ПО РАСПИСАНИЮ")
@@ -363,7 +367,12 @@ class CianPhoneParser:
             f.write(f"📈 Обработано объявлений: {len(self.parsed_data)}\n")
             f.write(f"✅ Успешно полученных номеров: {success_count}\n")
             f.write(f"⏱️ Время выполнения: {datetime.now() - self.start_time}\n")
-            f.write(f"🎯 Ограничение на количество: {self.max_phones}\n\n")
+            
+            # Измененный вывод информации об ограничении
+            if self.max_phones is None:
+                f.write(f"🎯 Ограничение на количество: без ограничений\n\n")
+            else:
+                f.write(f"🎯 Ограничение на количество: {self.max_phones}\n\n")
             
             f.write("📞 СПАРСЕННЫЕ НОМЕРА:\n")
             f.write("="*60 + "\n")
@@ -415,10 +424,16 @@ class CianPhoneParser:
         
         self._log(f"📊 Всего URL для обработки: {total_urls}")
         self._log(f"🎯 Тип авторов: {author_display}")
-        self._log(f"📈 Ограничение на количество номеров: {self.max_phones}")
+        
+        # Измененный вывод информации об ограничении
+        if self.max_phones is None:
+            self._log("📈 Ограничение на количество номеров: без ограничений")
+        else:
+            self._log(f"📈 Ограничение на количество номеров: {self.max_phones}")
         
         for idx, url in enumerate(urls, 1):
-            if processed_count >= self.max_phones:
+            # Проверяем ограничение ТОЛЬКО если max_phones задан
+            if self.max_phones is not None and processed_count >= self.max_phones:
                 self._log(f"\n🎯 Достигнуто ограничение в {self.max_phones} номеров. Парсинг остановлен.")
                 break
             
@@ -512,7 +527,13 @@ class CianPhoneParser:
         self._log("\n" + "="*60)
         self._log(f"🏁 Парсинг завершен: {end_time.strftime('%d.%m.%Y %H:%M:%S')}")
         self._log(f"⏱️ Общее время выполнения: {duration}")
-        self._log(f"📊 Обработано номеров: {processed_count}/{self.max_phones}")
+        
+        # Измененный вывод информации об обработанных номерах
+        if self.max_phones is None:
+            self._log(f"📊 Обработано номеров: {processed_count}")
+        else:
+            self._log(f"📊 Обработано номеров: {processed_count}/{self.max_phones}")
+        
         self._log(f"✅ Успешных номеров: {success_count}/{processed_count}")
         if self.author_type == 'developer':
             self._log(f"🔗 API запросов выполнено: {request_count}")

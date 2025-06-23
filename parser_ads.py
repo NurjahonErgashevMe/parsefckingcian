@@ -106,7 +106,7 @@ def parse_cian_ads(log_callback=None):
         # Формируем дополнительные настройки
         additional_settings = {
             "start_page": 1,
-            "end_page": 1,
+            # "end_page": 50,
         }
         
         if min_floor:
